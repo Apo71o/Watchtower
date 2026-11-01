@@ -85,7 +85,8 @@ watchtower/
   help/INSTALL.md        packaged copy of /INSTALL.md (test enforces they match)
   gui/context.py         AppContext (db, settings, audit, runner, deps, platform, bus)
   gui/main_window.py     tabs + Command Console dock + first-run flow
-  gui/help_panel.py      TabPage = content + collapsible help panel
+  gui/help_panel.py      TabPage = content + collapsible help panel (state = QAction; main window drives it from one
+                         "(?) What is this?" button in the tab bar corner, so a closed panel takes no space)
   gui/worker.py          run_in_background(): keep subprocesses off the GUI thread
   gui/run_dialog.py      RunPlanDialog: confirm -> run a Plan with live output; pkexec, else terminal
   gui/dependency_check.py, gui/tabs/*.py (all tabs implemented; placeholder.py was removed)

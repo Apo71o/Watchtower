@@ -806,3 +806,27 @@ def test_start_tab_last_used(ctx):
     win.tabs.setCurrentWidget(win.pages["traffic"])
     win2 = MainWindow(ctx)
     assert win2.tabs.currentWidget() is win2.pages["traffic"]
+
+
+def test_closed_help_panel_leaves_no_gap(ctx):
+    """Regression: closing "What is this?" used to leave an empty column the width of its button."""
+    from watchtower.gui.main_window import MainWindow
+    win = MainWindow(ctx)
+    win.resize(1400, 900)
+    win.show()
+    QApplication.processEvents()
+    for key in ("scan", "traffic", "settings"):
+        win.tabs.setCurrentWidget(win.pages[key])
+        page = win.pages[key]
+        assert win.help_button.defaultAction() is page.help.toggle       # corner button drives this tab
+        page.help.toggle.setChecked(True)
+        QApplication.processEvents()
+        open_width = page.content.width()
+        assert page.help.isVisible() and open_width < page.width() - 250
+        win.help_button.click()                                           # close via the corner button
+        QApplication.processEvents()
+        assert not page.help.toggle.isChecked() and not page.help.isVisible()
+        assert page.content.width() >= page.width() - 20, (key, page.content.width(), page.width())
+        win.help_button.click()
+        QApplication.processEvents()
+        assert page.help.isVisible() and page.content.width() == open_width   # reopens at the same size

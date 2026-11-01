@@ -10,7 +10,7 @@ from watchtower import APP_NAME, __version__
 from watchtower.core.platform_utils import WIFI_UNSUPPORTED_REASON
 from watchtower.gui.context import AppContext
 from watchtower.gui.dependency_check import DependencyDialog
-from watchtower.gui.help_panel import TabPage
+from watchtower.gui.help_panel import TabPage, toggle_button
 from watchtower.gui.tabs.audit_log_tab import AuditLogTab
 from watchtower.gui.tabs.changes_tab import ChangesTab
 from watchtower.gui.tabs.domain_audit_tab import DomainAuditTab
@@ -42,7 +42,7 @@ class MainWindow(QMainWindow):
         self.pages: dict[str, TabPage] = {}
 
         def add(key, label, widget, help_key=None, tooltip=None, enabled=True):
-            page = TabPage(widget, help_key or key)
+            page = TabPage(widget, help_key or key, own_button=False)
             idx = self.tabs.addTab(page, label)
             self.pages[key] = page
             if tooltip:
@@ -77,6 +77,12 @@ class MainWindow(QMainWindow):
         self.settings_tab = SettingsTab(ctx)
         add("settings", "Settings", self.settings_tab)
         self.setCentralWidget(self.tabs)
+        # One "(?) What is this?" button in the tab bar's corner drives the current tab's help panel,
+        # so a closed panel leaves no empty column behind.
+        self.help_button = toggle_button()
+        self.tabs.setCornerWidget(self.help_button, Qt.Corner.TopRightCorner)
+        self.tabs.currentChanged.connect(self._sync_help_button)
+        self._sync_help_button()
 
         # Command console: every command is displayed here as it starts.
         self.console = QPlainTextEdit(readOnly=True)
@@ -129,6 +135,13 @@ class MainWindow(QMainWindow):
 
     PAGE_FOR_START = {"Help (Where to start)": "help", "Findings": "findings", "Scan a Target": "scan",
                       "Nearby Networks": "nearby", "Traffic Audit": "traffic"}
+
+    def _sync_help_button(self, *_):
+        page = self.tabs.currentWidget()
+        if isinstance(page, TabPage):
+            for old in self.help_button.actions():
+                self.help_button.removeAction(old)
+            self.help_button.setDefaultAction(page.help.toggle)
 
     def _open_start_tab(self):
         choice = prefs.get(self.ctx.settings, prefs.START_TAB)
