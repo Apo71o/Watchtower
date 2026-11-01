@@ -52,7 +52,7 @@ def test_main_window_builds_without_startup_gate(ctx):
     win = MainWindow(ctx)
     labels = [win.tabs.tabText(i) for i in range(win.tabs.count())]
     assert labels == ["Interfaces", "Nearby Networks", "Scan a Target", "Findings", "Host Audit",
-                      "What Changed", "Audit Log", "Help", "Settings"]
+                      "What Changed", "Password Tools", "Audit Log", "Help", "Settings"]
     assert not hasattr(ctx, "authorized")
     ctx.runner.run([sys.executable, "-c", "pass"], purpose="smoke")
     QApplication.processEvents()
@@ -369,3 +369,65 @@ def test_settings_retention(ctx, tmp_path):
     tab.retention.setValue(30)
     assert ctx.settings.get(RETENTION_DAYS) == 30
     assert "Database size" in tab.data_info.text()
+
+
+def test_password_strength_panel(ctx):
+    from watchtower.gui.tabs.password_tab import StrengthPanel
+    panel = StrengthPanel(ctx)
+    panel.pw_input.setText("password")
+    assert panel.bar.value() <= 1 and panel.checklist.rowCount() > 0
+    assert panel.crack_table.rowCount() > 0
+    panel.pw_input.setText("correct-horse-battery-staple-9471")
+    assert panel.bar.value() >= 3
+    # context reuse weakens the score
+    panel.pw_input.setText("Smithxyz2020")
+    before = panel.bar.value()
+    panel.context_input.setText("Smith 2020")
+    assert panel.bar.value() <= before
+
+
+def test_breach_panel_online_and_batch(ctx, monkeypatch):
+    import requests
+
+    from watchtower.gui.tabs.password_tab import BreachPanel
+    sample_suffix = __import__("watchtower.core.pwned_check", fromlist=["x"]).split_hash("password")[1]
+
+    class Resp:
+        status_code = 200
+        text = f"{sample_suffix}:4242\r\nAAAABBBBCCCCDDDDEEEEFFFF0000111122:3"
+
+    class Sess:
+        def get(self, url, headers=None, timeout=None):
+            return Resp()
+
+    monkeypatch.setattr(requests, "Session", Sess)
+    panel = BreachPanel(ctx)
+    panel.single_input.setText("password")
+    panel._check_single()
+    assert wait_for(lambda: not panel._running, 10)
+    assert "4,242" in panel.single_result.text() and "breaches" in panel.single_result.text()
+    # the request is logged and only the hash prefix was involved (never the password)
+    reqs = [e for e in ctx.audit.entries() if e.event == "network_request"]
+    assert reqs and "api.pwnedpasswords.com/range/" in reqs[0].command
+    assert "password" not in reqs[0].command.split("/range/")[1]   # only the 5-char prefix, never the password
+    # batch
+    panel.batch_input.setPlainText("password\npassword\nsomethingelse")
+    panel._check_batch()
+    assert wait_for(lambda: not panel._running, 10)
+    assert panel.batch_table.rowCount() == 3
+    assert "breaches" in panel.batch_status.text() or "breach" in panel.batch_status.text()
+
+
+def test_breach_panel_offline(ctx, tmp_path):
+    from watchtower.core import pwned_check
+    from watchtower.gui.tabs.password_tab import BreachPanel
+    rows = sorted((pwned_check.sha1_hex(w), w) for w in ("password", "secret", "dragon"))
+    f = tmp_path / "pwned.txt"
+    f.write_text("\n".join(f"{h}:{500 if w == 'password' else 1}" for h, w in rows) + "\n")
+    panel = BreachPanel(ctx)
+    panel.offline.setChecked(True)
+    panel.offline_path.setText(str(f))
+    panel.single_input.setText("password")
+    panel._check_single()
+    assert wait_for(lambda: not panel._running, 10)
+    assert "500" in panel.single_result.text()

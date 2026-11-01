@@ -18,6 +18,7 @@ from watchtower.gui.tabs.help_tab import HelpTab
 from watchtower.gui.tabs.host_audit_tab import HostAuditTab
 from watchtower.gui.tabs.interfaces_tab import InterfacesTab
 from watchtower.gui.tabs.nearby_tab import NearbyTab
+from watchtower.gui.tabs.password_tab import PasswordTab
 from watchtower.gui.tabs.scan_tab import ScanTab
 from watchtower.gui.tabs.settings_tab import SettingsTab
 from watchtower.storage.settings import DEPS_REVIEWED
@@ -56,6 +57,8 @@ class MainWindow(QMainWindow):
         add("host_audit", "Host Audit", self.host_audit_tab)
         self.changes_tab = ChangesTab(ctx)
         add("changes", "What Changed", self.changes_tab)
+        self.password_tab = PasswordTab(ctx)
+        add("passwords", "Password Tools", self.password_tab)
         self.audit_tab = AuditLogTab(ctx)
         add("audit_log", "Audit Log", self.audit_tab)
         self.help_tab = HelpTab(ctx)

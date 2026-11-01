@@ -184,6 +184,30 @@ Schedules skip targets you've removed from the authorized list, and
 profiles that need root (e.g. Intense scan) unless nmap has been granted
 capabilities.
 """,
+"passwords": """
+### Password Tools
+Check your own passwords for strength and exposure. Everything here is
+local-first; nothing is stored and passwords are never written to the audit log.
+
+**Strength Analyzer** (`zxcvbn`, entirely offline): scores a password 0-4 by
+looking for dictionary words, keyboard walks, dates, repeats and reuse of any
+context words you supply (your name, email, the site). It shows estimated
+time-to-guess under several attack speeds, and a plain-language **NIST SP
+800-63B** checklist (length over complexity rules, breach-checked, not an
+obvious pattern).
+
+**Breach Check** (HaveIBeenPwned "Pwned Passwords"): tells you how many times a
+password has appeared in known breaches — if it has, stop using it.
+- **Online** uses *k-anonymity*: only the first 5 hex characters of the
+  password's SHA-1 are sent; the service returns a batch of matching suffixes
+  and the comparison happens on your machine. The password and its full hash
+  never leave the computer. Each request is shown in the Command Console and
+  audit log.
+- **Offline** needs no network: point it at a sorted Pwned Passwords hash file
+  (from the official HIBP downloader) and it binary-searches that.
+- **Batch** checks a whole list at once — for example an export from your own
+  password manager — and flags every entry seen in a breach.
+""",
 "audit_log": """
 ### Audit Log
 **What it does:** a read-only record of everything Watchtower has done: every
@@ -295,6 +319,16 @@ GLOSSARY: list[tuple[str, str]] = [
  "An attacker-controlled access point imitating a legitimate SSID so clients connect to "
  "it. Watchtower does not create one; the term is here because \"What Changed\" can flag "
  "an unexpected new BSSID advertising your SSID, which is how you would spot one."),
+("k-anonymity (Pwned Passwords)",
+ "A way to check a secret against a database without revealing it. Watchtower hashes the password "
+ "(SHA-1) locally and sends only the first 5 hex characters of that hash. The API returns every "
+ "breached-hash suffix sharing those 5 characters (hundreds of them), and Watchtower finds the match "
+ "locally. The server never learns which one you asked about, and never sees the password or its full hash."),
+("NIST SP 800-63B",
+ "The US digital-identity guideline for passwords. Its modern advice: require length (8+ minimum, longer "
+ "is better), screen new passwords against breach lists, and do NOT force arbitrary complexity rules "
+ "(mixed case/symbols) or periodic expiry — those push people toward predictable patterns. The Strength "
+ "Analyzer turns this into a pass/fail checklist."),
 ("Backported security fix",
  "Ubuntu and Debian freeze a package's upstream version for the life of a release and apply security fixes as "
  "patches, bumping only the package revision: OpenSSH 8.9p1 on Ubuntu 22.04 went from 3ubuntu0.1 to 3ubuntu0.10 "

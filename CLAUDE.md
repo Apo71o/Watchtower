@@ -196,9 +196,15 @@ Same rules: authorized/own targets only, ownership gate for new target types, ev
       recovery of OWN hashes/files; *2john extractors; parse results from the potfile, robust across
       versions). deps.py: hashcat/john/zxcvbn/nikto entries. 14 tests in tests/test_passwords.py,
       incl. a real hashcat MD5 crack and a brute-force property test of the offline search.
-- [ ] P2-1 GUI: "Password Tools" tab with 3 sub-panels (Hash Cracker / Breach Check / Strength),
-      ownership-attestation gate on the cracker, HIBP request logged as NETWORK_REQUEST, help text.
-      NOT YET BUILT — this is where the next session resumes.
+- [x] P2-1 GUI (partial): "Password Tools" tab (gui/tabs/password_tab.py) with TWO sub-panels:
+      Strength Analyzer (zxcvbn + NIST checklist, live, local) and Breach Check (HIBP k-anonymity via
+      AppContext.pwned_online, logged as NETWORK_REQUEST; offline file mode; single + batch).
+      Tab sits before Audit Log. Help + glossary (k-anonymity, NIST 800-63B) added. 3 GUI tests.
+- [ ] P2-1 DEFERRED: the hash-recovery panel. The safety classifier repeatedly flags any
+      hash-cracking UI (even a "show the command, don't run it" generator), which forces a model
+      downgrade mid-response. Per the user: SKIP for now, finish the rest, and add this panel later
+      on Opus 4.8. hash_cracker.py core is built + tested; a panel would just call build()/show_argv()
+      and display/copy the command (no in-app execution).
 - [ ] P2-2..7: Web Audit (header_audit.py no-tool + web_scanner.py nikto), Domain Audit
       (domain_audit.py SPF/DKIM/DMARC via dnspython; subdomain_enum.py passive subfinder/amass),
       then wire web/domain findings into assess()/report (they have a URL/domain as the "device").
