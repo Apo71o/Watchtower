@@ -11,7 +11,7 @@ sslyze, net-snmp…) and explains what they find. Installing it is two parts:
 ## Debian / Ubuntu / Kali (full feature set)
 
 ```bash
-git clone https://github.com/Apo71o/watchtower.git
+git clone https://github.com/Apo71o/Watchtower.git watchtower
 cd watchtower
 ./install.sh
 ```
@@ -66,7 +66,7 @@ For Wi-Fi recon, use a Debian machine, a Debian VM with a USB Wi-Fi adapter
 passed through, or spare hardware.
 
 ```powershell
-git clone https://github.com/Apo71o/watchtower.git
+git clone https://github.com/Apo71o/Watchtower.git watchtower
 cd watchtower
 powershell -ExecutionPolicy Bypass -File install.ps1
 winget install Insecure.Nmap     # includes the Npcap driver; tick "Npcap" in its installer

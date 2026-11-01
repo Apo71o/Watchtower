@@ -29,7 +29,7 @@ This project was started in a Claude Code cloud session and is meant to be
 continued locally, where the real Wi-Fi hardware is.
 
 ```bash
-git clone https://github.com/Apo71o/watchtower.git
+git clone https://github.com/Apo71o/Watchtower.git watchtower
 cd watchtower
 python3 -m venv .venv && .venv/bin/pip install -e ".[dev]"
 .venv/bin/pytest
