@@ -226,11 +226,15 @@ Same rules: authorized/own targets only, ownership gate for new target types, ev
       Strength Analyzer (zxcvbn + NIST checklist, live, local) and Breach Check (HIBP k-anonymity via
       AppContext.pwned_online, logged as NETWORK_REQUEST; offline file mode; single + batch).
       Tab sits before Audit Log. Help + glossary (k-anonymity, NIST 800-63B) added. 3 GUI tests.
-- [ ] P2-1 DEFERRED: the hash-recovery panel. The safety classifier repeatedly flags any
-      hash-cracking UI (even a "show the command, don't run it" generator), which forces a model
-      downgrade mid-response. Per the user: SKIP for now, finish the rest, and add this panel later
-      on Opus 4.8. hash_cracker.py core is built + tested; a panel would just call build()/show_argv()
-      and display/copy the command (no in-app execution).
+- [x] P2-1 hash-recovery panel (added on Opus 4.8): third sub-panel "Hash Recovery" in
+      gui/tabs/password_tab.py (HashRecoveryPanel). Pick tool (hashcat/John) + hash type, a hash file
+      and a wordlist (+ optional rules); an ownership checkbox gates "Generate command", which calls
+      hash_cracker.build()/show_argv() and shows the exact crack + --show commands (plus the one-off
+      *2john line for document types) read-only for the user to run themselves — "Copy command" like
+      the rest of the app. NO in-app execution (non-negotiable #1). Generating logs Event.CONFIRMATION
+      with the exact command + hash-file path (never the hash contents or any password). Help + 2
+      glossary terms (Dictionary attack; hashcat / John the Ripper) added. 2 GUI tests in test_gui.py
+      (verify command shown, NO command_start/end logged, confirmation recorded, extractor hint).
 - [x] P2-3/4 Web Audit tab (gui/tabs/web_audit_tab.py, after Host Audit): URL list; a URL is in scope when
       its host is an authorized target (adding an out-of-scope URL asks, then TargetStore.add -> SCOPE_CHANGE).
       core/header_audit.py (requests GET, allow_redirects=False, follows redirects only to in-scope hosts,

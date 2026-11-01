@@ -1,9 +1,12 @@
 from __future__ import annotations
 
-from PySide6.QtGui import QBrush, QColor
+from pathlib import Path
+
+from PySide6.QtGui import QBrush, QColor, QFont, QGuiApplication
 from PySide6.QtWidgets import (
     QButtonGroup,
     QCheckBox,
+    QComboBox,
     QFileDialog,
     QFormLayout,
     QGroupBox,
@@ -22,11 +25,15 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from watchtower.core import hash_cracker as hc
 from watchtower.core import password_strength as ps
 from watchtower.core import pwned_check as pw
+from watchtower.core.platform_utils import data_dir
+from watchtower.core.runner import format_command
 from watchtower.gui.context import AppContext
-from watchtower.gui.ui import tip
+from watchtower.gui.ui import restore_tip, tip
 from watchtower.gui.worker import run_in_background
+from watchtower.storage.audit_log import Event
 
 SCORE_COLORS = ["#b71c1c", "#e53935", "#ef6c00", "#2e7d32", "#1b5e20"]
 CHECK_MARK = {True: "✓", False: "✗", None: "–"}
@@ -40,6 +47,7 @@ class PasswordTab(QWidget):
         tabs = QTabWidget()
         tabs.addTab(StrengthPanel(ctx), "Strength Analyzer")
         tabs.addTab(BreachPanel(ctx), "Breach Check")
+        tabs.addTab(HashRecoveryPanel(ctx), "Hash Recovery")
         lay = QVBoxLayout(self)
         lay.addWidget(tabs)
 
@@ -390,5 +398,192 @@ class BreachPanel(QWidget):
         self._running = False
         self.batch_btn.setEnabled(True)
         self.batch_status.setText("Failed: " + msg.split("\n")[0])
+
+
+# --------------------------------------------------------------------------- #
+# Hash Recovery (command generator — never runs anything)                     #
+# --------------------------------------------------------------------------- #
+
+class HashRecoveryPanel(QWidget):
+    """Build — but never run — the exact hashcat/John command to recover a
+    password from a hash or file you own (a forgotten ZIP/PDF/Office password,
+    an /etc/shadow backup from your own machine, …).
+
+    Consistent with the rest of the app, this is a *command generator*: it shows
+    the exact command (the "Copy commands" pattern) for you to run yourself in a
+    terminal. Watchtower does not execute the recovery, in keeping with the
+    non-negotiable "no attack execution" rule. It is gated on an ownership
+    confirmation and records the generated command in the audit log.
+    """
+
+    def __init__(self, ctx: AppContext, parent=None):
+        super().__init__(parent)
+        self.ctx = ctx
+        self._job: hc.CrackJob | None = None
+
+        self.tool_combo = QComboBox()
+        tool_labels = {"hashcat": "hashcat", "john": "John the Ripper"}
+        tools = hc.available_tools()
+        for t in tools:
+            self.tool_combo.addItem(tool_labels.get(t, t), t)
+        tip(self.tool_combo, "Which recovery engine the command is built for. Add more under the Dependency check.")
+
+        self.type_combo = QComboBox()
+        for ht in hc.HASH_TYPES:
+            self.type_combo.addItem(ht.label, ht)
+        tip(self.type_combo, ("The kind of hash or file you're recovering. Document types (ZIP, RAR, 7-Zip, Office, "
+                              "PDF) need a one-off *2john extraction first — the command for that is shown too."))
+
+        self.hash_input = QLineEdit()
+        self.hash_input.setPlaceholderText("file containing the hash (for documents, the *2john output)")
+        tip(self.hash_input, ("Path to the file holding the hash you want to recover. It stays on this computer; only "
+                              "its path (never its contents) is written to the audit log."))
+        self.hash_browse = QPushButton("Browse…")
+        tip(self.hash_browse, "Choose the hash file.")
+
+        self.word_input = QLineEdit()
+        wordlists = hc.default_wordlists()
+        if wordlists:
+            self.word_input.setText(wordlists[0])
+        self.word_input.setPlaceholderText("wordlist (dictionary) file, e.g. /usr/share/wordlists/rockyou.txt")
+        tip(self.word_input, ("A wordlist of candidate passwords to try (a dictionary attack). Your own file; nothing "
+                              "is sent anywhere."))
+        self.word_browse = QPushButton("Browse…")
+        tip(self.word_browse, "Choose the wordlist file.")
+
+        self.rules_input = QLineEdit()
+        self.rules_input.setPlaceholderText("optional: rules file (hashcat -r) or a John rule name")
+        tip(self.rules_input, ("Optional transformation rules — a hashcat rules file, or a John rules name. Leave "
+                               "blank for a plain dictionary run."))
+
+        self.own_box = QCheckBox("I confirm I own these hashes/files, or am authorized to recover them.")
+        tip(self.own_box, ("Required. Watchtower only builds recovery commands for hashes and files you own or are "
+                           "authorized to recover. Your confirmation is recorded in the audit log."))
+
+        self.gen_btn = QPushButton("Generate command")
+        tip(self.gen_btn, ("Build the exact command for the options above. Watchtower does not run it — you copy and "
+                           "run it yourself."))
+        self.gen_btn.setEnabled(False)
+        self.copy_btn = QPushButton("Copy command")
+        tip(self.copy_btn, "Copy the recovery command so you can run it in a terminal.")
+        self.copy_btn.setEnabled(False)
+
+        self.output = QPlainTextEdit(readOnly=True)
+        self.output.setFont(QFont("monospace"))
+        self.output.setPlaceholderText("The generated command appears here. Watchtower never runs it.")
+
+        form = QFormLayout()
+        form.addRow("Tool:", self.tool_combo)
+        form.addRow("Hash type:", self.type_combo)
+        hrow = QHBoxLayout()
+        hrow.addWidget(self.hash_input, 1)
+        hrow.addWidget(self.hash_browse)
+        form.addRow("Hash file:", hrow)
+        wrow = QHBoxLayout()
+        wrow.addWidget(self.word_input, 1)
+        wrow.addWidget(self.word_browse)
+        form.addRow("Wordlist:", wrow)
+        form.addRow("Rules:", self.rules_input)
+
+        btn_row = QHBoxLayout()
+        btn_row.addWidget(self.gen_btn)
+        btn_row.addWidget(self.copy_btn)
+        btn_row.addStretch()
+
+        note = QLabel("Watchtower only builds the command — it never runs a recovery here. Copy it and run it "
+                      "yourself in a terminal. Hashes, files and any recovered passwords stay on this machine; only "
+                      "the command and the hash-file path are written to the audit log.")
+        note.setWordWrap(True)
+        note.setStyleSheet("color: #757575;")
+
+        lay = QVBoxLayout(self)
+        if not tools:
+            warn = QLabel("Neither hashcat nor John the Ripper is installed, so no command can be built. "
+                          "Install one from the Dependency check, then reopen this tab.")
+            warn.setWordWrap(True)
+            warn.setStyleSheet("color: #c62828;")
+            lay.addWidget(warn)
+            self.own_box.setEnabled(False)
+            restore_tip(self.own_box, "Install hashcat or John the Ripper first.")
+        lay.addLayout(form)
+        lay.addWidget(self.own_box)
+        lay.addLayout(btn_row)
+        lay.addWidget(self.output, 1)
+        lay.addWidget(note)
+
+        self.hash_browse.clicked.connect(self._browse_hash)
+        self.word_browse.clicked.connect(self._browse_word)
+        self.own_box.toggled.connect(self._update_enabled)
+        self.gen_btn.clicked.connect(self._generate)
+        self.copy_btn.clicked.connect(self._copy)
+
+    def _update_enabled(self):
+        have_tool = bool(hc.available_tools())
+        ok = self.own_box.isChecked() and have_tool
+        self.gen_btn.setEnabled(ok)
+        restore_tip(self.gen_btn, "" if ok else
+                    ("Install hashcat or John the Ripper first." if not have_tool else "Confirm ownership first."))
+
+    def _browse_hash(self):
+        path, _ = QFileDialog.getOpenFileName(self, "Hash file")
+        if path:
+            self.hash_input.setText(path)
+
+    def _browse_word(self):
+        path, _ = QFileDialog.getOpenFileName(self, "Wordlist")
+        if path:
+            self.word_input.setText(path)
+
+    def _extractor_hint(self, htype: hc.HashType) -> str | None:
+        """For document hash types, the one-off *2john command to produce the hash file."""
+        kind = htype.john_format if htype.john_format in hc.EXTRACTORS else None
+        if not kind:
+            return None
+        found = hc.find_extractor(kind)
+        extractor = found or f"{kind}2john"
+        return format_command([extractor, "<your-document>"]) + " > hash.txt"
+
+    def _generate(self):
+        if not self.own_box.isChecked():
+            return
+        tool = self.tool_combo.currentData()
+        htype = self.type_combo.currentData()
+        hash_file = self.hash_input.text().strip()
+        wordlist = self.word_input.text().strip()
+        rules = self.rules_input.text().strip() or None
+        workdir = str(data_dir() / "hash_recovery")
+        try:
+            Path(workdir).mkdir(parents=True, exist_ok=True)
+            job = hc.build(tool, hash_file, htype, wordlist, workdir, rules)
+        except hc.CrackError as exc:
+            self._job = None
+            self.copy_btn.setEnabled(False)
+            self.output.setPlainText(f"# Could not build the command:\n# {exc}")
+            return
+
+        self._job = job
+        crack_cmd = format_command(job.argv)
+        show_cmd = format_command(hc.show_argv(job))
+        lines: list[str] = []
+        extractor = self._extractor_hint(htype)
+        if extractor:
+            lines += ["# Step 1 — extract the hash from the document (run against the document itself):",
+                      extractor, "",
+                      "# Step 2 — run the dictionary recovery against that hash file:"]
+        else:
+            lines.append("# Run the dictionary recovery:")
+        lines += [crack_cmd, "", "# Afterwards, list any passwords that were recovered:", show_cmd]
+        self.output.setPlainText("\n".join(lines))
+        self.copy_btn.setEnabled(True)
+
+        # Audit: records the ownership confirmation and the exact command. Watchtower does NOT run it.
+        self.ctx.audit.append(
+            Event.CONFIRMATION, command=crack_cmd, target=hash_file or None,
+            detail={"purpose": "hash-recovery command generated (not run by Watchtower)",
+                    "tool": tool, "hash_type": htype.label})
+
+    def _copy(self):
+        if self._job:
+            QGuiApplication.clipboard().setText(format_command(self._job.argv))
 
 

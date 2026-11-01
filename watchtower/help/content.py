@@ -321,6 +321,18 @@ password has appeared in known breaches — if it has, stop using it.
   (from the official HIBP downloader) and it binary-searches that.
 - **Batch** checks a whole list at once — for example an export from your own
   password manager — and flags every entry seen in a breach.
+
+**Hash Recovery** (`hashcat` / John the Ripper): for a hash or file **you own** —
+a forgotten ZIP/PDF/Office password, an `/etc/shadow` backup from your own
+machine — this builds the exact *dictionary-attack* command and shows it so you
+can **run it yourself in a terminal**. Watchtower never runs the recovery here
+(consistent with the app's no-execution rule); it only generates the command,
+just like "Copy commands" elsewhere. Pick the tool and hash type, point it at
+the hash file and a wordlist, confirm you own the hash, then **Generate
+command** and **Copy command**. Document types (ZIP, RAR, 7-Zip, Office, PDF)
+show the one-off `*2john` step that produces the hash file first. Your hashes,
+files and any recovered passwords stay on this machine; only the generated
+command and the hash-file path are written to the audit log.
 """,
 "audit_log": """
 ### Audit Log
@@ -590,4 +602,13 @@ GLOSSARY: list[tuple[str, str]] = [
  "whether a default-credential fingerprint matched, Wi-Fi encryption weakness and how "
  "many ports are exposed. It is a triage aid for deciding what to fix first, not a "
  "formal metric."),
+("Dictionary attack",
+ "Trying passwords from a list (a \"wordlist\" such as rockyou.txt), optionally with rules that tweak each "
+ "word (append digits, swap letters for look-alikes). It recovers common or reused passwords quickly but "
+ "cannot find a long random one. Password Tools' Hash Recovery builds the command for this against a hash "
+ "you own; you run it yourself."),
+("hashcat / John the Ripper",
+ "The two standard password-recovery engines. They take a hash (or a *2john extract of a document) and a "
+ "wordlist and report any passwords that match. Watchtower uses them only to build the exact command for you "
+ "to run on your own hashes — it never runs a recovery itself, and never touches other systems."),
 ]

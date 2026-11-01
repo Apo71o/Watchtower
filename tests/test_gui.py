@@ -434,6 +434,76 @@ def test_breach_panel_offline(ctx, tmp_path):
     assert "500" in panel.single_result.text()
 
 
+def _select_tool(panel, key):
+    data = [panel.tool_combo.itemData(i) for i in range(panel.tool_combo.count())]
+    panel.tool_combo.setCurrentIndex(data.index(key))
+
+
+def test_hash_recovery_panel_generates_but_never_runs(ctx, tmp_path):
+    from watchtower.core import hash_cracker as hc
+    from watchtower.gui.tabs.password_tab import HashRecoveryPanel
+    if "hashcat" not in hc.available_tools():
+        pytest.skip("hashcat not installed")
+
+    hash_file = tmp_path / "hash.txt"
+    hash_file.write_text("5f4dcc3b5aa765d61d8327deb882cf99\n")   # md5("password")
+    wordlist = tmp_path / "words.txt"
+    wordlist.write_text("letmein\npassword\n")
+
+    panel = HashRecoveryPanel(ctx)
+    # pick hashcat + MD5
+    _select_tool(panel, "hashcat")
+    panel.type_combo.setCurrentIndex(0)   # MD5
+    assert panel.type_combo.currentData().label == "MD5"
+    panel.hash_input.setText(str(hash_file))
+    panel.word_input.setText(str(wordlist))
+
+    # ownership gate: can't generate until confirmed
+    assert not panel.gen_btn.isEnabled()
+    panel.own_box.setChecked(True)
+    assert panel.gen_btn.isEnabled()
+
+    panel._generate()
+    out = panel.output.toPlainText()
+    assert "hashcat" in out and "-m 0" in out and "--show" in out   # crack + show commands shown
+    assert panel.copy_btn.isEnabled()
+
+    # nothing was executed: no command_start/end was logged, only a confirmation of the generated command
+    events = [e.event for e in ctx.audit.entries()]
+    assert "command_start" not in events and "command_end" not in events
+    conf = [e for e in ctx.audit.entries() if e.event == "user_confirmation"]
+    assert conf and conf[0].target == str(hash_file)
+    assert str(hash_file) in conf[0].command and "password" not in (conf[0].detail or "")
+
+    # copy puts the crack command on the clipboard
+    panel._copy()
+    assert "hashcat" in QApplication.clipboard().text()
+
+
+def test_hash_recovery_panel_document_type_shows_extractor(ctx, tmp_path):
+    from watchtower.core import hash_cracker as hc
+    from watchtower.gui.tabs.password_tab import HashRecoveryPanel
+    if not hc.available_tools():
+        pytest.skip("no recovery tool installed")
+    hash_file = tmp_path / "zip.hash"
+    hash_file.write_text("$zip2$*0*...*$/zip2$\n")
+    wordlist = tmp_path / "w.txt"
+    wordlist.write_text("secret\n")
+    panel = HashRecoveryPanel(ctx)
+    # select the ZIP type and John (hashcat has no ZIP mode)
+    idx = [panel.type_combo.itemData(i).label for i in range(panel.type_combo.count())].index("ZIP (PKZIP/WinZip)")
+    panel.type_combo.setCurrentIndex(idx)
+    if "john" in hc.available_tools():
+        _select_tool(panel, "john")
+    panel.hash_input.setText(str(hash_file))
+    panel.word_input.setText(str(wordlist))
+    panel.own_box.setChecked(True)
+    panel._generate()
+    out = panel.output.toPlainText()
+    if "john" in hc.available_tools():
+        assert "zip2john" in out and "Step 1" in out   # one-off extractor command is shown first
+
+
 def _http_server():
     from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
