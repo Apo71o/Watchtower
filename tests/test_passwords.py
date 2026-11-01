@@ -178,3 +178,58 @@ def test_offline_search_matches_bruteforce(tmp_path):
     # first and last line specifically
     assert pw.check_offline(rows[0][1], str(f)).count == truth[rows[0][1]]
     assert pw.check_offline(rows[-1][1], str(f)).count == truth[rows[-1][1]]
+
+
+# ---- wordlist builder ----
+
+def test_wordlist_generate_mutations_and_cap():
+    from watchtower.core import wordlist_builder as wl
+    opts = wl.BuildOptions(case_variants=True, leet=True, append_digits=True,
+                           append_years=True, year_start=2019, year_end=2021, append_symbols=True)
+    words, truncated = wl.generate(["Spot", "smith"], opts)
+    assert not truncated
+    # base + case variants
+    for w in ("Spot", "spot", "SPOT"):
+        assert w in words
+    # leet, suffixes
+    assert wl.leet("spot") == "$p07" and "$p07" in words
+    assert "spot2020" in words and "smith!" in words
+    # deterministic + unique
+    assert len(words) == len(set(words))
+    assert wl.generate(["Spot", "smith"], opts)[0] == words
+    # combine pairs
+    combo, _ = wl.generate(["red", "fox"], wl.BuildOptions(case_variants=False, combine_words=True))
+    assert "redfox" in combo and "foxred" in combo
+    # hard cap
+    capped, trunc = wl.generate(["a", "b", "c"], wl.BuildOptions(append_years=True, max_entries=7))
+    assert trunc and len(capped) == 7
+
+
+def test_wordlist_merge_and_write(tmp_path):
+    from watchtower.core import wordlist_builder as wl
+    a = tmp_path / "a.txt"
+    b = tmp_path / "b.txt"
+    a.write_text("beta\nalpha\n\nbeta\n")
+    b.write_text("alpha\ngamma\n")
+    lines, total = wl.merge_files([str(a), str(b)], dedupe=True, sort=True)
+    assert lines == ["alpha", "beta", "gamma"] and total == 5
+    # no dedupe / no sort keeps order and count
+    lines2, total2 = wl.merge_files([str(a), str(b)], dedupe=False, sort=False)
+    assert lines2 == ["beta", "alpha", "beta", "alpha", "gamma"] and total2 == 5
+    out = tmp_path / "out.txt"
+    n = wl.write_list(str(out), lines)
+    assert n == 3 and out.read_text().splitlines() == ["alpha", "beta", "gamma"]
+    with pytest.raises(ValueError):
+        wl.merge_files([str(tmp_path / "nope.txt")])
+
+
+def test_wordlist_bundled_and_plans():
+    from watchtower.core import wordlist_builder as wl
+    bundled = wl.bundled_wordlists()
+    names = {b.name for b in bundled}
+    assert {"Common passwords", "Keyboard patterns"} <= names
+    for b in bundled:
+        assert b.count > 0 and b.path.is_file()
+    # install plans build the documented, visible commands (never run here)
+    assert "wordlists" in wl.rockyou_plan().describe()
+    assert "git clone" in wl.seclists_plan("/tmp/SecLists").describe()

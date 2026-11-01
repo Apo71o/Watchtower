@@ -14,10 +14,14 @@ from PySide6.QtWidgets import (
     QHeaderView,
     QLabel,
     QLineEdit,
+    QListWidget,
+    QMessageBox,
     QPlainTextEdit,
     QProgressBar,
     QPushButton,
     QRadioButton,
+    QScrollArea,
+    QSpinBox,
     QTableWidget,
     QTableWidgetItem,
     QTabWidget,
@@ -28,6 +32,7 @@ from PySide6.QtWidgets import (
 from watchtower.core import hash_cracker as hc
 from watchtower.core import password_strength as ps
 from watchtower.core import pwned_check as pw
+from watchtower.core import wordlist_builder as wl
 from watchtower.core.platform_utils import data_dir
 from watchtower.core.runner import format_command
 from watchtower.gui.context import AppContext
@@ -44,12 +49,22 @@ class PasswordTab(QWidget):
     def __init__(self, ctx: AppContext, parent=None):
         super().__init__(parent)
         self.ctx = ctx
-        tabs = QTabWidget()
-        tabs.addTab(StrengthPanel(ctx), "Strength Analyzer")
-        tabs.addTab(BreachPanel(ctx), "Breach Check")
-        tabs.addTab(HashRecoveryPanel(ctx), "Hash Recovery")
+        self.tabs = QTabWidget()
+        self.strength = StrengthPanel(ctx)
+        self.breach = BreachPanel(ctx)
+        self.hashrec = HashRecoveryPanel(ctx)
+        self.wordlists = WordlistPanel(ctx, on_use_wordlist=self._use_wordlist)
+        self.tabs.addTab(self.strength, "Strength Analyzer")
+        self.tabs.addTab(self.breach, "Breach Check")
+        self.tabs.addTab(self.hashrec, "Hash Recovery")
+        self.tabs.addTab(self.wordlists, "Wordlists")
         lay = QVBoxLayout(self)
-        lay.addWidget(tabs)
+        lay.addWidget(self.tabs)
+
+    def _use_wordlist(self, path: str):
+        """Wordlists panel -> put a list into the Hash Recovery panel and show it."""
+        self.hashrec.set_wordlist(path)
+        self.tabs.setCurrentWidget(self.hashrec)
 
 
 # --------------------------------------------------------------------------- #
@@ -585,5 +600,345 @@ class HashRecoveryPanel(QWidget):
     def _copy(self):
         if self._job:
             QGuiApplication.clipboard().setText(format_command(self._job.argv))
+
+    def set_wordlist(self, path: str):
+        """Fill in the wordlist path (used by the Wordlists panel)."""
+        self.word_input.setText(path)
+
+
+# --------------------------------------------------------------------------- #
+# Wordlists — build, clean up, and fetch wordlists (all local but installs)   #
+# --------------------------------------------------------------------------- #
+
+class WordlistPanel(QWidget):
+    """Create and manage wordlists for the hashes/files you audit.
+
+    A wordlist is just a text file of candidate passwords; building one is local
+    and does no cracking. The only action that reaches the network is installing
+    the big public lists, which runs a visible, logged command (apt / git) in
+    RunPlanDialog — never a silent download.
+    """
+
+    def __init__(self, ctx: AppContext, on_use_wordlist=None, parent=None):
+        super().__init__(parent)
+        self.ctx = ctx
+        self._on_use = on_use_wordlist
+
+        inner = QWidget()
+        lay = QVBoxLayout(inner)
+        lay.addWidget(self._build_group())
+        lay.addWidget(self._starter_group())
+        lay.addWidget(self._merge_group())
+        lay.addWidget(self._install_group())
+        lay.addStretch()
+
+        scroll = QScrollArea()
+        scroll.setWidgetResizable(True)
+        scroll.setWidget(inner)
+        outer = QVBoxLayout(self)
+        outer.setContentsMargins(0, 0, 0, 0)
+        outer.addWidget(scroll)
+
+    # ---- build a targeted list ----
+    def _build_group(self) -> QGroupBox:
+        box = QGroupBox("Build a targeted list")
+        self.base_input = QPlainTextEdit()
+        self.base_input.setPlaceholderText("one word per line: names, pets, dates, company, keywords…")
+        self.base_input.setToolTip("Words related to whatever you're auditing. Watchtower builds the variations an "
+                                   "attacker would try from them. Everything stays on this machine.")
+        self.base_input.setMaximumHeight(110)
+
+        self.cb_case = QCheckBox("Case variations (word, Word, WORD)")
+        self.cb_case.setChecked(True)
+        tip(self.cb_case, "Add lower-case, Capitalised and UPPER-CASE forms of each word.")
+        self.cb_leet = QCheckBox("Leet-speak (a→@, e→3, o→0 …)")
+        tip(self.cb_leet, "Also add a form with letters swapped for look-alike symbols/digits.")
+        self.cb_digits = QCheckBox("Append common numbers (1, 123, 2024 …)")
+        tip(self.cb_digits, "Add common trailing numbers people put on the end of passwords.")
+        self.cb_years = QCheckBox("Append years")
+        tip(self.cb_years, "Add a four-digit year on the end, across the range on the right.")
+        self.year_from = QSpinBox()
+        self.year_from.setRange(1950, wl._this_year() + 1)
+        self.year_from.setValue(2000)
+        tip(self.year_from, "First year to append.")
+        self.year_to = QSpinBox()
+        self.year_to.setRange(1950, wl._this_year() + 1)
+        self.year_to.setValue(wl._this_year())
+        tip(self.year_to, "Last year to append.")
+        self.cb_symbols = QCheckBox("Append common symbols (!, @, # …)")
+        tip(self.cb_symbols, "Add common trailing symbols.")
+        self.cb_combine = QCheckBox("Combine pairs of words")
+        tip(self.cb_combine, "Also try each pair of base words joined together (e.g. 'spot' + 'smith').")
+
+        self.max_spin = QSpinBox()
+        self.max_spin.setRange(100, 5_000_000)
+        self.max_spin.setSingleStep(1000)
+        self.max_spin.setValue(wl.BuildOptions.max_entries)
+        self.max_spin.setGroupSeparatorShown(True)
+        tip(self.max_spin, "Hard cap on how many entries to generate, so the list can't explode.")
+
+        self.preview_btn = QPushButton("Preview")
+        tip(self.preview_btn, "Build the list now and show how many entries it has, plus a sample.")
+        self.save_btn = QPushButton("Save to file…")
+        tip(self.save_btn, "Build the list and save it as a text file you can use in Hash Recovery.")
+        self.build_count = QLabel()
+        self.build_count.setWordWrap(True)
+        self.preview_box = QPlainTextEdit(readOnly=True)
+        self.preview_box.setFont(QFont("monospace"))
+        self.preview_box.setPlaceholderText("A sample of the generated list appears here.")
+        self.preview_box.setMaximumHeight(140)
+
+        yrow = QHBoxLayout()
+        yrow.addWidget(self.cb_years)
+        yrow.addWidget(self.year_from)
+        yrow.addWidget(QLabel("to"))
+        yrow.addWidget(self.year_to)
+        yrow.addStretch()
+
+        opts = QVBoxLayout()
+        opts.addWidget(self.cb_case)
+        opts.addWidget(self.cb_leet)
+        opts.addWidget(self.cb_digits)
+        opts.addLayout(yrow)
+        opts.addWidget(self.cb_symbols)
+        opts.addWidget(self.cb_combine)
+
+        maxrow = QHBoxLayout()
+        maxrow.addWidget(QLabel("Max entries:"))
+        maxrow.addWidget(self.max_spin)
+        maxrow.addStretch()
+        maxrow.addWidget(self.preview_btn)
+        maxrow.addWidget(self.save_btn)
+
+        lay = QVBoxLayout(box)
+        lay.addWidget(QLabel("Base words (one per line):"))
+        lay.addWidget(self.base_input)
+        lay.addLayout(opts)
+        lay.addLayout(maxrow)
+        lay.addWidget(self.build_count)
+        lay.addWidget(self.preview_box)
+
+        self.preview_btn.clicked.connect(self._preview)
+        self.save_btn.clicked.connect(self._save_build)
+        return box
+
+    def _options(self) -> wl.BuildOptions:
+        return wl.BuildOptions(
+            case_variants=self.cb_case.isChecked(), leet=self.cb_leet.isChecked(),
+            append_digits=self.cb_digits.isChecked(), append_years=self.cb_years.isChecked(),
+            append_symbols=self.cb_symbols.isChecked(), combine_words=self.cb_combine.isChecked(),
+            year_start=min(self.year_from.value(), self.year_to.value()),
+            year_end=max(self.year_from.value(), self.year_to.value()),
+            max_entries=self.max_spin.value())
+
+    def _generate(self):
+        base = [ln for ln in self.base_input.toPlainText().splitlines() if ln.strip()]
+        if not base:
+            return None, None, False
+        words, truncated = wl.generate(base, self._options())
+        return base, words, truncated
+
+    def _preview(self):
+        base, words, truncated = self._generate()
+        if base is None:
+            self.build_count.setText("Enter at least one base word above.")
+            self.preview_box.clear()
+            return
+        cap = " (capped — raise Max entries for more)" if truncated else ""
+        self.build_count.setText(f"{len(words):,} entries{cap}. Showing the first 200.")
+        self.preview_box.setPlainText("\n".join(words[:200]))
+
+    def _save_build(self):
+        base, words, truncated = self._generate()
+        if base is None:
+            self.build_count.setText("Enter at least one base word above.")
+            return
+        path, _ = QFileDialog.getSaveFileName(self, "Save wordlist", "wordlist.txt", "Text (*.txt);;All files (*)")
+        if not path:
+            return
+        try:
+            n = wl.write_list(path, words)
+        except OSError as exc:
+            QMessageBox.warning(self, "Couldn't save", str(exc))
+            return
+        cap = " (list was capped — raise Max entries for more)" if truncated else ""
+        self.build_count.setText(f"Saved {n:,} entries to {path}{cap}.")
+        if self._on_use and QMessageBox.question(
+                self, "Use this list?", f"Saved {n:,} entries.\n\nUse it in Hash Recovery now?"
+        ) == QMessageBox.StandardButton.Yes:
+            self._on_use(path)
+
+    # ---- bundled starter lists ----
+    def _starter_group(self) -> QGroupBox:
+        box = QGroupBox("Starter lists (included)")
+        self.starter_table = QTableWidget(0, 3)
+        self.starter_table.setHorizontalHeaderLabels(["List", "Entries", "What it is"])
+        self.starter_table.verticalHeader().setVisible(False)
+        self.starter_table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
+        self.starter_table.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
+        self.starter_table.horizontalHeader().setSectionResizeMode(2, QHeaderView.ResizeMode.Stretch)
+        self.starter_table.setMaximumHeight(130)
+        self._bundled = wl.bundled_wordlists()
+        self.starter_table.setRowCount(len(self._bundled))
+        for r, b in enumerate(self._bundled):
+            self.starter_table.setItem(r, 0, QTableWidgetItem(b.name))
+            self.starter_table.setItem(r, 1, QTableWidgetItem(f"{b.count:,}"))
+            self.starter_table.setItem(r, 2, QTableWidgetItem(b.description))
+
+        self.use_btn = QPushButton("Use in Hash Recovery")
+        tip(self.use_btn, "Load the selected starter list into the Hash Recovery wordlist box.")
+        self.copy_path_btn = QPushButton("Copy path")
+        tip(self.copy_path_btn, "Copy the selected list's file path to the clipboard.")
+        self.savecopy_btn = QPushButton("Save a copy…")
+        tip(self.savecopy_btn, "Save a copy of the selected starter list somewhere you choose.")
+
+        row = QHBoxLayout()
+        row.addWidget(self.use_btn)
+        row.addWidget(self.copy_path_btn)
+        row.addWidget(self.savecopy_btn)
+        row.addStretch()
+
+        lay = QVBoxLayout(box)
+        if not self._bundled:
+            lay.addWidget(QLabel("No starter lists are installed with this build."))
+        lay.addWidget(self.starter_table)
+        lay.addLayout(row)
+
+        self.use_btn.clicked.connect(self._use_starter)
+        self.copy_path_btn.clicked.connect(self._copy_starter_path)
+        self.savecopy_btn.clicked.connect(self._save_starter_copy)
+        return box
+
+    def _selected_bundled(self):
+        r = self.starter_table.currentRow()
+        if 0 <= r < len(self._bundled):
+            return self._bundled[r]
+        return None
+
+    def _use_starter(self):
+        b = self._selected_bundled()
+        if b and self._on_use:
+            self._on_use(str(b.path))
+
+    def _copy_starter_path(self):
+        b = self._selected_bundled()
+        if b:
+            QGuiApplication.clipboard().setText(str(b.path))
+
+    def _save_starter_copy(self):
+        b = self._selected_bundled()
+        if not b:
+            return
+        path, _ = QFileDialog.getSaveFileName(self, "Save a copy", b.path.name, "Text (*.txt);;All files (*)")
+        if not path:
+            return
+        try:
+            wl.write_list(path, b.path.read_text(encoding="utf-8", errors="replace").splitlines())
+        except OSError as exc:
+            QMessageBox.warning(self, "Couldn't save", str(exc))
+
+    # ---- merge / clean up ----
+    def _merge_group(self) -> QGroupBox:
+        box = QGroupBox("Combine / clean up lists")
+        self.files_list = QListWidget()
+        self.files_list.setMaximumHeight(90)
+        self.add_files_btn = QPushButton("Add files…")
+        tip(self.add_files_btn, "Choose one or more wordlist files to combine.")
+        self.clear_files_btn = QPushButton("Clear")
+        tip(self.clear_files_btn, "Remove all chosen files from the list.")
+        self.cb_dedupe = QCheckBox("Remove duplicates")
+        self.cb_dedupe.setChecked(True)
+        tip(self.cb_dedupe, "Keep only the first occurrence of each line.")
+        self.cb_sort = QCheckBox("Sort A–Z")
+        tip(self.cb_sort, "Sort the merged list alphabetically.")
+        self.merge_btn = QPushButton("Merge to file…")
+        tip(self.merge_btn, "Combine the chosen files (blank lines dropped) and save the result.")
+        self.merge_status = QLabel()
+        self.merge_status.setWordWrap(True)
+
+        top = QHBoxLayout()
+        top.addWidget(self.add_files_btn)
+        top.addWidget(self.clear_files_btn)
+        top.addStretch()
+        bottom = QHBoxLayout()
+        bottom.addWidget(self.cb_dedupe)
+        bottom.addWidget(self.cb_sort)
+        bottom.addStretch()
+        bottom.addWidget(self.merge_btn)
+
+        lay = QVBoxLayout(box)
+        lay.addLayout(top)
+        lay.addWidget(self.files_list)
+        lay.addLayout(bottom)
+        lay.addWidget(self.merge_status)
+
+        self.add_files_btn.clicked.connect(self._add_merge_files)
+        self.clear_files_btn.clicked.connect(lambda: (self.files_list.clear(), self.merge_status.clear()))
+        self.merge_btn.clicked.connect(self._merge)
+        return box
+
+    def _add_merge_files(self):
+        paths, _ = QFileDialog.getOpenFileNames(self, "Add wordlists", "", "Text (*.txt *.lst);;All files (*)")
+        for p in paths:
+            self.files_list.addItem(p)
+
+    def _merge(self):
+        paths = [self.files_list.item(i).text() for i in range(self.files_list.count())]
+        if not paths:
+            self.merge_status.setText("Add at least one file first.")
+            return
+        out, _ = QFileDialog.getSaveFileName(self, "Save merged list", "merged.txt", "Text (*.txt);;All files (*)")
+        if not out:
+            return
+        try:
+            lines, total = wl.merge_files(paths, dedupe=self.cb_dedupe.isChecked(), sort=self.cb_sort.isChecked())
+            n = wl.write_list(out, lines)
+        except (ValueError, OSError) as exc:
+            self.merge_status.setText(f"Failed: {exc}")
+            return
+        removed = total - n
+        self.merge_status.setText(
+            f"Saved {n:,} entries to {out} (read {total:,}, removed {removed:,} duplicates/blanks).")
+
+    # ---- install the big lists ----
+    def _install_group(self) -> QGroupBox:
+        box = QGroupBox("Get more wordlists")
+        note = QLabel("These download standard public wordlists. Watchtower shows the exact command first and logs "
+                      "it — nothing is downloaded silently. Once rockyou is installed, Hash Recovery fills it in "
+                      "automatically.")
+        note.setWordWrap(True)
+        note.setStyleSheet("color: #757575;")
+        self.rockyou_btn = QPushButton("Install rockyou (apt)…")
+        tip(self.rockyou_btn, "Install your distro's 'wordlists' package (provides rockyou) via a shown, logged "
+                              "command. Needs your password.")
+        self.seclists_btn = QPushButton("Download SecLists (git)…")
+        tip(self.seclists_btn, "Clone the SecLists collection into your data folder with git. No password needed; "
+                               "it is large.")
+        row = QHBoxLayout()
+        row.addWidget(self.rockyou_btn)
+        row.addWidget(self.seclists_btn)
+        row.addStretch()
+        lay = QVBoxLayout(box)
+        lay.addWidget(note)
+        lay.addLayout(row)
+        self.rockyou_btn.clicked.connect(self._install_rockyou)
+        self.seclists_btn.clicked.connect(self._install_seclists)
+        return box
+
+    def _run_plan(self, title: str, intro: str, plan):
+        from watchtower.gui.run_dialog import RunPlanDialog
+        RunPlanDialog(self.ctx, title, intro, plan, self).exec()
+
+    def _install_rockyou(self):
+        intro = ("This installs the 'wordlists' package from your OS package repository (which provides the rockyou "
+                 "list) and unpacks it to /usr/share/wordlists. The command is shown below and written to the audit "
+                 "log; you'll be asked for your password.")
+        self._run_plan("Install rockyou", intro, wl.rockyou_plan())
+
+    def _install_seclists(self):
+        dest = str(data_dir() / "wordlists" / "SecLists")
+        intro = (f"This clones the SecLists collection from GitHub into {dest} using git (no password needed). "
+                 "It is several hundred MB. The command is shown below and written to the audit log.")
+        self._run_plan("Download SecLists", intro, wl.seclists_plan(dest))
 
 

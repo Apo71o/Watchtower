@@ -504,6 +504,79 @@ def test_hash_recovery_panel_document_type_shows_extractor(ctx, tmp_path):
         assert "zip2john" in out and "Step 1" in out   # one-off extractor command is shown first
 
 
+def test_wordlist_panel_build_merge_and_starter(ctx, tmp_path, monkeypatch):
+    from PySide6.QtWidgets import QMessageBox
+
+    from watchtower.gui.tabs.password_tab import PasswordTab
+    tab = PasswordTab(ctx)
+    assert [tab.tabs.tabText(i) for i in range(tab.tabs.count())][-1] == "Wordlists"
+    wp = tab.wordlists
+
+    # build a targeted list and preview it
+    wp.base_input.setPlainText("spot\nsmith")
+    wp.cb_leet.setChecked(True)
+    wp.cb_years.setChecked(True)
+    wp._preview()
+    assert "entries" in wp.build_count.text()
+    assert 0 < len(wp.preview_box.toPlainText().splitlines()) <= 200
+
+    # save it (stub the file dialog + the "use it now?" prompt)
+    out = tmp_path / "wl.txt"
+    monkeypatch.setattr("watchtower.gui.tabs.password_tab.QFileDialog.getSaveFileName",
+                        lambda *a, **k: (str(out), ""))
+    monkeypatch.setattr("watchtower.gui.tabs.password_tab.QMessageBox.question",
+                        lambda *a, **k: QMessageBox.StandardButton.Yes)
+    wp._save_build()
+    assert out.is_file() and out.read_text().strip()
+    # "use it" routed the saved list into Hash Recovery and switched tabs
+    assert tab.hashrec.word_input.text() == str(out)
+    assert tab.tabs.tabText(tab.tabs.currentIndex()) == "Hash Recovery"
+
+    # starter list -> Hash Recovery
+    assert wp.starter_table.rowCount() >= 1
+    wp.starter_table.selectRow(0)
+    wp._use_starter()
+    assert tab.hashrec.word_input.text().endswith(".txt")
+
+    # merge two files, dedupe
+    a = tmp_path / "a.txt"
+    b = tmp_path / "b.txt"
+    a.write_text("alpha\nbeta\n")
+    b.write_text("beta\ngamma\n")
+    wp.files_list.addItem(str(a))
+    wp.files_list.addItem(str(b))
+    merged = tmp_path / "m.txt"
+    monkeypatch.setattr("watchtower.gui.tabs.password_tab.QFileDialog.getSaveFileName",
+                        lambda *a, **k: (str(merged), ""))
+    wp._merge()
+    assert merged.read_text().splitlines() == ["alpha", "beta", "gamma"]
+    assert "removed 1" in wp.merge_status.text()
+
+
+def test_wordlist_install_actions_never_run(ctx, monkeypatch):
+    """The 'Get more wordlists' buttons build a shown/logged plan in RunPlanDialog;
+    they must not execute anything on their own."""
+    from watchtower.gui.tabs.password_tab import PasswordTab
+    captured = {}
+
+    class FakeDialog:
+        def __init__(self, ctx, title, intro, plan, parent=None):
+            captured["title"] = title
+            captured["cmd"] = plan.describe()
+
+        def exec(self):
+            captured["execed"] = True   # only shows the confirm dialog; runs nothing itself
+
+    monkeypatch.setattr("watchtower.gui.run_dialog.RunPlanDialog", FakeDialog)
+    wp = PasswordTab(ctx).wordlists
+    wp._install_rockyou()
+    assert "wordlists" in captured["cmd"] and captured.get("execed")
+    wp._install_seclists()
+    assert "git clone" in captured["cmd"]
+    # nothing was executed as a command by clicking the buttons
+    assert not [e for e in ctx.audit.entries() if e.event in ("command_start", "command_end")]
+
+
 def _http_server():
     from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 

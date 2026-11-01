@@ -333,6 +333,21 @@ command** and **Copy command**. Document types (ZIP, RAR, 7-Zip, Office, PDF)
 show the one-off `*2john` step that produces the hash file first. Your hashes,
 files and any recovered passwords stay on this machine; only the generated
 command and the hash-file path are written to the audit log.
+
+**Wordlists**: make and manage the candidate-password lists Hash Recovery uses.
+- **Build a targeted list**: enter words about the target (names, dates, pets,
+  keywords) and Watchtower produces the variations an attacker would try —
+  case changes, leet-speak, appended numbers/years/symbols, joined pairs. It is
+  capped so it can't explode, and it all happens locally.
+- **Starter lists**: a couple of small lists ship with Watchtower (common
+  passwords, keyboard patterns) for a quick check; use one straight away or save
+  a copy.
+- **Combine / clean up**: merge several lists into one, dropping blank lines and
+  (optionally) duplicates, and sort.
+- **Get more wordlists**: install the big standard public lists (rockyou via your
+  OS package manager, or SecLists via git). These are the only actions here that
+  use the network, and — like everything else in Watchtower — the exact command
+  is shown first and written to the audit log; nothing downloads silently.
 """,
 "audit_log": """
 ### Audit Log
@@ -611,4 +626,9 @@ GLOSSARY: list[tuple[str, str]] = [
  "The two standard password-recovery engines. They take a hash (or a *2john extract of a document) and a "
  "wordlist and report any passwords that match. Watchtower uses them only to build the exact command for you "
  "to run on your own hashes — it never runs a recovery itself, and never touches other systems."),
+("Wordlist",
+ "A text file of candidate passwords, one per line, that a recovery tool tries in turn. Building one is just "
+ "writing a file — no cracking happens until you run the recovery command yourself. The Wordlists panel can build "
+ "a targeted list from words you supply, clean up and merge lists, and install the big public lists (rockyou, "
+ "SecLists). rockyou is a famous ~14-million-entry list from a 2009 breach, the usual first thing to try."),
 ]

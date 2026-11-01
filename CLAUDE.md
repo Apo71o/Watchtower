@@ -235,6 +235,17 @@ Same rules: authorized/own targets only, ownership gate for new target types, ev
       with the exact command + hash-file path (never the hash contents or any password). Help + 2
       glossary terms (Dictionary attack; hashcat / John the Ripper) added. 2 GUI tests in test_gui.py
       (verify command shown, NO command_start/end logged, confirmation recorded, extractor hint).
+- [x] P2-1b Wordlists panel (user request 2026-11-01): fourth sub-panel "Wordlists" in password_tab.py
+      (WordlistPanel) + core/wordlist_builder.py (Qt-free). Four sections: (1) build a targeted list from
+      base words with bounded mutations — case/leet/append digits+years+symbols/combine pairs, hard
+      max_entries cap, Preview + Save; (2) small bundled starter lists in data/wordlists/*.txt
+      (common-passwords, keyboard-patterns) with Use-in-Hash-Recovery / Copy path / Save a copy; (3)
+      merge/dedupe/sort existing lists; (4) "Get more wordlists" = install rockyou (apt 'wordlists' pkg,
+      elevated) or clone SecLists (git) — the ONLY networked actions, run through RunPlanDialog so the
+      exact command is shown + logged (never silent), consistent with non-negotiable #4. "Use in Hash
+      Recovery" sets the sibling panel's wordlist path. pyproject package-data includes data/wordlists/*.txt.
+      Help + glossary ("Wordlist") added. 3 core tests (test_passwords.py) + 2 GUI tests (test_gui.py,
+      incl. install buttons run nothing themselves).
 - [x] P2-3/4 Web Audit tab (gui/tabs/web_audit_tab.py, after Host Audit): URL list; a URL is in scope when
       its host is an authorized target (adding an out-of-scope URL asks, then TargetStore.add -> SCOPE_CHANGE).
       core/header_audit.py (requests GET, allow_redirects=False, follows redirects only to in-scope hosts,

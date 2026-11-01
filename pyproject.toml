@@ -33,7 +33,7 @@ version = { attr = "watchtower.__version__" }
 include = ["watchtower*"]
 
 [tool.setuptools.package-data]
-watchtower = ["data/*.json", "data/*.svg", "help/*.md"]
+watchtower = ["data/*.json", "data/*.svg", "data/wordlists/*.txt", "help/*.md"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
