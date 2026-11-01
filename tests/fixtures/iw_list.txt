@@ -1,0 +1,28 @@
+Wiphy phy0
+	wiphy index: 0
+	max # scan SSIDs: 4
+	Supported Ciphers:
+		* WEP40 (00-0f-ac:1)
+		* CCMP-128 (00-0f-ac:4)
+	Available Antennas: TX 0 RX 0
+	Supported interface modes:
+		 * IBSS
+		 * managed
+		 * AP
+		 * P2P-client
+		 * P2P-GO
+		 * P2P-device
+	Band 1:
+		Capabilities: 0x1062
+	software interface modes (can always be added):
+Wiphy phy1
+	wiphy index: 1
+	Supported interface modes:
+		 * IBSS
+		 * managed
+		 * AP
+		 * AP/VLAN
+		 * monitor
+		 * mesh point
+	Band 1:
+		Capabilities: 0x116e

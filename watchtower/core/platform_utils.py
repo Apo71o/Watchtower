@@ -94,6 +94,18 @@ def require_linux(feature: str) -> None:
         )
 
 
+def relaunch_as_admin(args: list[str] | None = None) -> bool:
+    """Windows: start a new elevated copy of Watchtower (UAC prompt). Returns
+    True if the elevated process was started; the caller should then quit."""
+    if not is_windows():
+        return False
+    import subprocess
+    exe = sys.executable.replace("python.exe", "pythonw.exe")
+    params = subprocess.list2cmdline(["-m", "watchtower", *(args or [])])
+    rc = ctypes.windll.shell32.ShellExecuteW(None, "runas", exe, params, None, 1)  # type: ignore[attr-defined]
+    return rc > 32
+
+
 def which(tool: str) -> str | None:
     return shutil.which(tool)
 

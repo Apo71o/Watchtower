@@ -8,33 +8,20 @@ from PySide6.QtWidgets import (
     QHBoxLayout,
     QLabel,
     QLineEdit,
-    QMessageBox,
-    QPushButton,
     QVBoxLayout,
     QWidget,
 )
 
 from watchtower.core.platform_utils import data_dir
-from watchtower.gui.auth_gate import AuthGateDialog, revoke_acknowledgment
 from watchtower.gui.context import AppContext
 from watchtower.gui.theme import apply_theme
-from watchtower.storage.settings import AUTH_ACK, NVD_API_KEY, NVD_ENABLED, THEME
+from watchtower.storage.settings import NVD_API_KEY, NVD_ENABLED, THEME
 
 
 class SettingsTab(QWidget):
     def __init__(self, ctx: AppContext, parent=None):
         super().__init__(parent)
         self.ctx = ctx
-
-        # Authorization
-        auth_box = QGroupBox("Authorization acknowledgment")
-        self.auth_lbl = QLabel()
-        self.auth_lbl.setWordWrap(True)
-        self.auth_btn = QPushButton()
-        self.auth_btn.clicked.connect(self._toggle_auth)
-        al = QVBoxLayout(auth_box)
-        al.addWidget(self.auth_lbl)
-        al.addWidget(self.auth_btn)
 
         # NVD
         nvd_box = QGroupBox("Vulnerability data (NVD)")
@@ -70,30 +57,10 @@ class SettingsTab(QWidget):
         row.addWidget(nvd_box)
         row.addWidget(look_box)
         lay = QVBoxLayout(self)
-        lay.addWidget(auth_box)
         lay.addLayout(row)
         lay.addWidget(sched_box)
         lay.addWidget(info)
         lay.addStretch()
-        ctx.bus.authorization_changed.connect(lambda _: self._refresh_auth())
-        self._refresh_auth()
-
-    def _refresh_auth(self):
-        ack = self.ctx.settings.get(AUTH_ACK)
-        if ack:
-            self.auth_lbl.setText(f"Accepted {ack['ts']} (UTC):\n“{ack['text']}”")
-            self.auth_btn.setText("Revoke (locks scanning)")
-        else:
-            self.auth_lbl.setText("Not accepted. Scanning features are locked.")
-            self.auth_btn.setText("Review and accept…")
-
-    def _toggle_auth(self):
-        if self.ctx.authorized:
-            if QMessageBox.question(self, "Revoke", "Revoke the acknowledgment and lock scanning?") \
-                    == QMessageBox.StandardButton.Yes:
-                revoke_acknowledgment(self.ctx)
-        else:
-            AuthGateDialog(self.ctx, self).exec()
 
     def _theme(self, name: str):
         self.ctx.settings.set(THEME, name)

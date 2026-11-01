@@ -18,34 +18,50 @@ what passive recon tools like airodump-ng need. Many built-in laptop adapters
 do not support it; many USB adapters do.
 
 **Reading the result:** "monitor: yes" means the driver advertises the mode.
-Watchtower will ask before switching any interface into monitor mode, because
-doing so drops your normal Wi-Fi connection on that adapter.
-
-*Status: implemented in build step 2.*
+Watchtower asks before switching any interface into monitor mode, because
+doing so drops your normal Wi-Fi connection on that adapter. Switching back
+hands the adapter back to NetworkManager so it reconnects.
 """,
 "nearby": """
 ### Nearby Networks
-**What it does:** a passive listing of every access point in range: SSID,
-BSSID, channel, encryption and signal strength. It wraps `nmcli`/`iwlist`
-(managed mode) or `airodump-ng` (monitor mode, listen-only). Watchtower never
-transmits deauthentication frames, probes or association attempts.
+**What it does:** lists every access point in range: SSID, BSSID, channel,
+encryption, WPS and signal strength. Two methods:
+- **Managed scan** (`nmcli`, else `iwlist`): the same scan your OS runs to fill
+  its Wi-Fi menu. Works with any adapter and keeps you connected. `iwlist` also
+  reveals whether an AP advertises **WPS**.
+- **Monitor-mode listen** (`airodump-ng`): purely passive listening on every
+  channel for the time you choose. It also sees **client devices** and which
+  network each one is talking to or probing for. Needs a monitor-capable adapter
+  (see Interfaces). Watchtower offers to switch the adapter for you.
+
+Only CSV summaries are written; no packets are captured or saved.
 
 **Why it matters:** this is how an attacker first sees your network. Weak
 encryption (open, WEP, WPA1) or WPS being enabled is visible from the street.
 
-**The Authorized checkbox:** tick it only for networks you own or have written
-permission to test. Unticked rows stay visible (seeing beacons is passive and
-legitimate) but cannot be investigated further. The choice is stored locally
-and every change is written to the audit log.
-
-*Status: implemented in build step 2.*
+**The Authorized checkbox:** tick it for your own networks. Only authorized
+networks can be **Investigated**: Watchtower adds your subnet on that network to
+the authorized targets and opens Scan a Target. Every change is written to the
+audit log. Colors: red = open/WEP, orange = WPA1 or WPS enabled.
 """,
 "scan": """
 ### Scan a Target
-**What it does:** runs `nmap` against one host you type in, on a network you
-have marked authorized. The exact command line is shown before it runs and
-recorded in the audit log. Results (open ports, service names, versions) are
-parsed from nmap's XML output (`-oX`).
+**What it does:** runs `nmap` with any options you like, against targets on your
+**authorized targets** list (left). The exact command is previewed live, shown in
+the Command Console and recorded in the audit log. Results (hosts, open ports,
+services, versions, OS guesses, script output) are parsed from nmap's XML output
+and every scan is kept in Scan history.
+
+**Targets:** single IPs, CIDRs (`192.168.1.0/24`), nmap ranges
+(`192.168.1.1-50`) or hostnames. Add entries manually, pick one of your local
+subnets, or use Investigate on an authorized Wi-Fi network. Any extra targets
+typed in Extra arguments must also be on the list. `-iL`, `-iR`, `-b` and
+`--resume` are refused because their targets can't be checked.
+
+**Privileges:** options such as `-O`, `-sU` or `-A` need raw sockets. If nmap has
+been granted capabilities (Tools → Dependency Check) Watchtower adds
+`--privileged` automatically. Otherwise it offers to run that scan through the
+password prompt.
 
 **Why it matters:** each open port is a service someone can talk to. Old
 versions of those services are where most known vulnerabilities (CVEs) live.
@@ -54,7 +70,6 @@ versions of those services are where most known vulnerabilities (CVEs) live.
 It is opt-in because some scripts are intrusive (they send real probes for
 specific bugs), so only use it on hosts you are allowed to stress.
 
-*Status: implemented in build step 3.*
 """,
 "findings": """
 ### Findings
@@ -105,8 +120,6 @@ Export it to CSV or JSON for your write-ups.
 """,
 "settings": """
 ### Settings
-- **Authorization acknowledgment:** when you accepted it. You can revoke it,
-  which locks scanning until you accept again.
 - **NVD lookups:** off by default. When off, Watchtower makes no network
   requests of its own at all. When on, it queries the NIST National
   Vulnerability Database for CVEs matching discovered service versions.

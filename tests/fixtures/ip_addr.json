@@ -1,0 +1,1 @@
+[{"ifindex":1,"ifname":"lo","addr_info":[{"family":"inet","local":"127.0.0.1","prefixlen":8,"scope":"host"}]},{"ifindex":3,"ifname":"wlan0","addr_info":[{"family":"inet","local":"192.168.1.23","prefixlen":24,"scope":"global"},{"family":"inet6","local":"fe80::1","prefixlen":64,"scope":"link"}]}]

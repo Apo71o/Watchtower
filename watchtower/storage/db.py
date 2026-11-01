@@ -38,6 +38,56 @@ MIGRATIONS: list[str] = [
     CREATE TRIGGER audit_log_no_delete BEFORE DELETE ON audit_log
     BEGIN SELECT RAISE(ABORT, 'audit_log is append-only'); END;
     """,
+    # 2: Wi-Fi observations, authorized scope, scan history
+    """
+    CREATE TABLE networks (
+        bssid       TEXT PRIMARY KEY,          -- upper-case MAC
+        ssid        TEXT,
+        channel     INTEGER,
+        freq        INTEGER,                   -- MHz
+        signal_dbm  INTEGER,
+        signal_pct  INTEGER,
+        security    TEXT,                      -- normalized, e.g. "WPA2", "WPA2/WPA3", "WEP", "Open"
+        cipher      TEXT,
+        auth        TEXT,                      -- PSK / SAE / MGT / OPN
+        wps         INTEGER,                   -- 1 seen, 0 not advertised, NULL unknown
+        raw_security TEXT,
+        source      TEXT,                      -- nmcli / iwlist / airodump-ng
+        first_seen  TEXT NOT NULL,
+        last_seen   TEXT NOT NULL,
+        authorized  INTEGER NOT NULL DEFAULT 0
+    );
+
+    CREATE TABLE stations (
+        mac         TEXT PRIMARY KEY,
+        bssid       TEXT,                      -- NULL when not associated
+        power       INTEGER,
+        packets     INTEGER,
+        probes      TEXT,                      -- comma-separated probed SSIDs
+        first_seen  TEXT NOT NULL,
+        last_seen   TEXT NOT NULL
+    );
+
+    CREATE TABLE targets (
+        id          INTEGER PRIMARY KEY AUTOINCREMENT,
+        value       TEXT NOT NULL UNIQUE COLLATE NOCASE,  -- IP, CIDR, nmap range, or hostname
+        note        TEXT,
+        bssid       TEXT,                      -- network it was added from, if any
+        added       TEXT NOT NULL
+    );
+
+    CREATE TABLE scans (
+        id          INTEGER PRIMARY KEY AUTOINCREMENT,
+        tool        TEXT NOT NULL,             -- "nmap"
+        target      TEXT NOT NULL,
+        command     TEXT NOT NULL,
+        started     TEXT NOT NULL,
+        finished    TEXT,
+        exit_code   INTEGER,
+        raw_output  TEXT                       -- nmap XML
+    );
+    CREATE INDEX scans_target ON scans(target, started);
+    """,
 ]
 
 

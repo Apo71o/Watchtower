@@ -12,10 +12,11 @@ import importlib.util
 import os
 import re
 import shutil
+import sys
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from watchtower.core.platform_utils import OS, current_os, is_linux, is_windows
+from watchtower.core.platform_utils import OS, current_os, is_elevated, is_linux, is_windows
 from watchtower.core.runner import CommandRunner, CommandUnavailable, format_command
 
 _VERSION_RE = re.compile(r"(\d+\.\d+(?:\.\d+)?(?:[a-z]\d*)?)")
@@ -32,6 +33,7 @@ class Tool:
     python_module: str | None = None  # alternatively satisfied by an importable module
     apt_package: str | None = None
     winget_id: str | None = None
+    winget_interactive: bool = False  # installer can't run silently (e.g. Npcap free edition)
     manual_url: str | None = None   # for tools with no clean package-manager story
     optional: bool = False
     needs_raw_sockets: bool = False  # candidate for the setcap step on Linux
@@ -55,8 +57,9 @@ TOOLS: list[Tool] = [
          apt_package="nmap", winget_id="Insecure.Nmap",
          manual_url="https://nmap.org/download.html", needs_raw_sockets=True),
     Tool("npcap", "Npcap driver", "Packet capture driver nmap needs on Windows for SYN scans and OS detection.",
-         (OS.WINDOWS,), manual_url="https://npcap.com/#download",
-         note="Bundled with the official Nmap installer; tick the Npcap box during setup."),
+         (OS.WINDOWS,), winget_id="Insecure.Npcap", winget_interactive=True,
+         manual_url="https://npcap.com/#download",
+         note="Its installer opens a window you click through (it cannot install silently)."),
     Tool("iw", "iw", "Lists wireless interfaces and whether they support monitor mode.",
          (OS.LINUX,), ("iw",), ("--version",), apt_package="iw"),
     Tool("nmcli", "nmcli (NetworkManager)", "Managed-mode scan of nearby networks without monitor mode.",
@@ -88,6 +91,46 @@ TOOLS: list[Tool] = [
          (OS.LINUX, OS.WINDOWS, OS.MACOS), ("weasyprint",), ("--version",), python_module="weasyprint",
          apt_package="weasyprint", optional=True),
 ]
+
+
+def _extra_dirs() -> list[Path]:
+    """Places tools live that are often missing from a normal user's PATH.
+    Debian keeps /usr/sbin out of non-root PATH, and that is exactly where iw,
+    airodump-ng and setcap install. On Windows, a fresh Nmap install isn't on
+    the PATH of an already-running app until it restarts."""
+    if is_windows():
+        dirs = []
+        for var in ("ProgramFiles(x86)", "ProgramFiles"):
+            if os.environ.get(var):
+                dirs.append(Path(os.environ[var]) / "Nmap")
+        if os.environ.get("LOCALAPPDATA"):
+            dirs.append(Path(os.environ["LOCALAPPDATA"]) / "Microsoft" / "WinGet" / "Links")
+        return dirs
+    return [Path(d) for d in ("/usr/local/sbin", "/usr/sbin", "/sbin", "/usr/local/bin", "/snap/bin")]
+
+
+def find_binary(*names: str) -> str | None:
+    for name in names:
+        found = shutil.which(name)
+        if found:
+            return found
+    for d in _extra_dirs():
+        for name in names:
+            for candidate in (d / name, d / f"{name}.exe"):
+                if candidate.is_file() and os.access(candidate, os.X_OK):
+                    return str(candidate)
+    return None
+
+
+def has_file_capabilities(path: str) -> bool:
+    """Linux: True if setcap has granted the binary file capabilities."""
+    if not is_linux():
+        return False
+    try:
+        os.getxattr(os.path.realpath(path), "security.capability")
+        return True
+    except (OSError, AttributeError):
+        return False
 
 
 def tools_for_platform(os_: OS | None = None) -> list[Tool]:
@@ -128,7 +171,7 @@ def check_tool(tool: Tool, runner: CommandRunner | None = None) -> ToolStatus:
         ok = _npcap_installed()
         return ToolStatus(tool, ok, detail="driver found" if ok else "", install_hint=hint)
 
-    path = next((p for p in (shutil.which(b) for b in tool.binaries) if p), None)
+    path = find_binary(*tool.binaries) if tool.binaries else None
     if path:
         version = None
         if runner is not None:
@@ -171,6 +214,13 @@ class DependencyState:
         s = self.statuses.get(key)
         return bool(s and s.present)
 
+    def path(self, key: str) -> str | None:
+        """Absolute path of the tool's binary (use this in argv, not the bare name)."""
+        s = self.statuses.get(key)
+        if s and s.present and s.path and not s.path.startswith("python module"):
+            return s.path
+        return None
+
     def reason(self, key: str) -> str:
         s = self.statuses.get(key)
         if s is None:
@@ -182,38 +232,130 @@ class DependencyState:
 
 # ---- install / privilege plans (always shown to the user and confirmed) ----
 
-def apt_install_argv(missing: list[ToolStatus]) -> list[str] | None:
-    pkgs = sorted({s.tool.apt_package for s in missing if s.tool.apt_package})
-    if not pkgs:
-        return None
-    return ["apt-get", "install", "-y", *pkgs]
+
+_PKG_RE = re.compile(r"^[a-z0-9][a-z0-9.+-]*$")
 
 
-def winget_install_argvs(missing: list[ToolStatus]) -> list[list[str]]:
-    return [["winget", "install", "--exact", "--id", s.tool.winget_id]
-            for s in missing if s.tool.winget_id]
+@dataclass
+class Step:
+    label: str
+    argv: list[str]
+    elevated: bool = False   # needs root (wrapped with pkexec, or run in a terminal with sudo)
+    script: str | None = None  # for elevated shell scripts: the script text, for display / terminal fallback
 
 
-def setcap_argvs(statuses: list[ToolStatus]) -> list[list[str]]:
+@dataclass
+class Plan:
+    steps: list[Step]
+    manual: list[str]  # things the user must install by hand (no package-manager route)
+
+    def describe(self) -> str:
+        out = []
+        for st in self.steps:
+            out.append(f"# {st.label}")
+            if st.script:
+                out.append(("sudo " if st.elevated else "") + f"sh -c {_shquote(st.script)}")
+            else:
+                out.append(("sudo " if st.elevated and not is_windows() else "") + format_command(st.argv))
+        return "\n".join(out)
+
+
+def _shquote(s: str) -> str:
+    import shlex
+    return shlex.quote(s)
+
+
+def apt_script(packages: list[str]) -> str:
+    """One root shell script: refresh package lists, then install each package
+    separately so one unavailable package doesn't abort the rest."""
+    pkgs = sorted({p for p in packages if _PKG_RE.match(p)})
+    return (
+        'export DEBIAN_FRONTEND=noninteractive; apt-get update; failed=""; '
+        f"for p in {' '.join(pkgs)}; do "
+        'echo; echo "==> installing $p"; apt-get install -y "$p" || failed="$failed $p"; done; '
+        'if [ -n "$failed" ]; then echo; echo "FAILED:$failed"; exit 1; fi; echo; echo "All packages installed."'
+    )
+
+
+def install_plan(missing: list[ToolStatus], python: str | None = None) -> Plan:
+    python = python or sys.executable
+    steps: list[Step] = []
+    manual: list[str] = []
+    pip_mods = [s.tool.python_module for s in missing
+                if s.tool.python_module and not (is_linux() and s.tool.apt_package)]
+    if is_linux():
+        pkgs = [s.tool.apt_package for s in missing if s.tool.apt_package]
+        if pkgs:
+            script = apt_script(pkgs)
+            steps.append(Step("Install system packages with apt", ["/bin/sh", "-c", script], True, script))
+        manual += [f"{s.tool.name}: {s.install_hint}" for s in missing
+                   if not s.tool.apt_package and not s.tool.python_module]
+    elif is_windows():
+        for s in missing:
+            if s.tool.winget_id:
+                argv = ["winget", "install", "--exact", "--id", s.tool.winget_id, "--source", "winget",
+                        "--accept-source-agreements", "--accept-package-agreements"]
+                if s.tool.winget_interactive:
+                    argv.append("--interactive")
+                steps.append(Step(f"Install {s.tool.name}", argv))
+            elif not s.tool.python_module:
+                manual.append(f"{s.tool.name}: {s.install_hint}")
+    if pip_mods:
+        steps.append(Step("Install Python packages into Watchtower's environment",
+                          [python, "-m", "pip", "install", *pip_mods]))
+    return Plan(steps, manual)
+
+
+def setcap_plan(statuses: list[ToolStatus]) -> Plan:
     """Linux only: grant raw-socket capabilities to specific binaries instead of
     running the whole GUI as root."""
-    out = []
+    paths = []
     for s in statuses:
         if s.present and s.tool.needs_raw_sockets and s.path and not s.path.startswith("python"):
-            real = os.path.realpath(s.path)
-            out.append(["setcap", "cap_net_raw,cap_net_admin+eip", real])
-    return out
+            paths.append(os.path.realpath(s.path))
+    if not paths:
+        return Plan([], [])
+    setcap = find_binary("setcap") or "/usr/sbin/setcap"
+    script = "; ".join(f"{setcap} cap_net_raw,cap_net_admin+eip {_shquote(p)}" for p in paths)
+    return Plan([Step("Grant raw-socket capabilities", ["/bin/sh", "-c", script], True, script)], [])
 
 
 def elevate(argv: list[str]) -> list[str] | None:
-    """Wrap argv so it prompts for the admin password graphically (pkexec).
-    Returns None if no graphical elevation helper exists; the GUI then shows
-    the command to copy into a terminal instead."""
-    if is_linux() and shutil.which("pkexec"):
-        return ["pkexec", *argv]
+    """Wrap argv to run as root via the graphical password prompt (pkexec).
+    Already root: unchanged. No pkexec: None (caller falls back to a terminal)."""
+    if is_elevated():
+        return argv
+    pk = find_binary("pkexec")
+    if is_linux() and pk:
+        return [pk, *argv]
     return None
 
 
-def describe_plan(argvs: list[list[str]], elevated: bool) -> str:
-    prefix = "sudo " if elevated and not is_windows() else ""
-    return "\n".join(prefix + format_command(a) for a in argvs)
+# pkexec exit codes meaning "couldn't authenticate" (no polkit agent, dialog dismissed)
+PKEXEC_AUTH_FAILED = (126, 127)
+
+
+_TERMINALS = [
+    ("x-terminal-emulator", lambda c: ["-e", "bash", "-c", c]),
+    ("gnome-terminal", lambda c: ["--", "bash", "-c", c]),
+    ("konsole", lambda c: ["-e", "bash", "-c", c]),
+    ("xfce4-terminal", lambda c: ["-x", "bash", "-c", c]),
+    ("qterminal", lambda c: ["-e", f"bash -c {_shquote(c)}"]),
+    ("mate-terminal", lambda c: ["-x", "bash", "-c", c]),
+    ("tilix", lambda c: ["-e", f"bash -c {_shquote(c)}"]),
+    ("kitty", lambda c: ["bash", "-c", c]),
+    ("alacritty", lambda c: ["-e", "bash", "-c", c]),
+    ("xterm", lambda c: ["-e", "bash", "-c", c]),
+]
+
+
+def terminal_argv(root_script: str) -> list[str] | None:
+    """Open a terminal window that runs the script with sudo, so the user types
+    their password there. Used when no graphical password prompt is available."""
+    cmd = (f"sudo sh -c {_shquote(root_script)}; echo; "
+           "read -r -p 'Finished. Press Enter to close, then click Re-check in Watchtower. ' _")
+    for name, build in _TERMINALS:
+        path = find_binary(name)
+        if path:
+            return [path, *build(cmd)]
+    return None

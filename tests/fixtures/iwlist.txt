@@ -1,0 +1,35 @@
+wlan0     Scan completed :
+          Cell 01 - Address: AA:BB:CC:00:00:01
+                    Channel:6
+                    Frequency:2.437 GHz (Channel 6)
+                    Quality=60/70  Signal level=-50 dBm
+                    Encryption key:on
+                    ESSID:"Home Lab"
+                    Bit Rates:1 Mb/s; 2 Mb/s; 5.5 Mb/s; 11 Mb/s
+                    IE: IEEE 802.11i/WPA2 Version 1
+                        Group Cipher : CCMP
+                        Pairwise Ciphers (1) : CCMP
+                        Authentication Suites (1) : PSK
+                    IE: Unknown: DD180050F204104A0001101044000102103B00010310470010
+          Cell 02 - Address: AA:BB:CC:00:00:03
+                    Channel:11
+                    Frequency:2.462 GHz (Channel 11)
+                    Quality=20/70  Signal level=-90 dBm
+                    Encryption key:on
+                    ESSID:"OldRouter"
+          Cell 03 - Address: AA:BB:CC:00:00:06
+                    Channel:1
+                    Frequency:2.412 GHz (Channel 1)
+                    Quality=40/70  Signal level=-70 dBm
+                    Encryption key:off
+                    ESSID:"Guest"
+          Cell 04 - Address: AA:BB:CC:00:00:07
+                    Channel:44
+                    Frequency:5.22 GHz
+                    Quality=50/70  Signal level=-60 dBm
+                    Encryption key:on
+                    ESSID:"Modern"
+                    IE: IEEE 802.11i/WPA2 Version 1
+                        Group Cipher : CCMP
+                        Pairwise Ciphers (1) : CCMP
+                        Authentication Suites (2) : PSK SAE

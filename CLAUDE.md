@@ -3,7 +3,19 @@
 Local PySide6 GUI that wraps existing security tools for **authorized**
 home-lab auditing and **reports** findings with remediation. The full,
 authoritative requirements are in `docs/SPEC.md`; read the relevant section
-before starting a build step.
+before starting a build step. Where the user has since changed a requirement,
+the "User decisions" section below wins over the spec.
+
+## User decisions (override docs/SPEC.md)
+
+- 2026-11-01: **No startup authorization/legal warning.** The user is the sole user
+  and asked for it to be removed. Don't re-add a first-run acknowledgment screen.
+  (Per-network "Authorized" flags and the authorized-target list remain; they are
+  the user's own scope list, not a warning.)
+- 2026-11-01: **Wrapped tools keep their full functionality.** Watchtower never
+  modifies or restricts the installed tools (users can run aircrack-ng, nmap etc.
+  directly at full capability), and the Scan tab accepts any nmap option via Extra
+  arguments. The only checks are scope checks on targets.
 
 ## Non-negotiables (check every change against these)
 
@@ -19,13 +31,11 @@ before starting a build step.
 3. **Transparency:** every external process goes through
    `watchtower.core.runner.CommandRunner.run()` (argv list, never `shell=True`).
    It shows the exact command in the Command Console and writes it to the audit log.
-4. **Authorization gate:** scanning features stay disabled while
-   `ctx.authorized` is False (first-run acknowledgment, revocable in Settings).
-5. **No network calls** except NVD lookups behind the Settings toggle (off by
+4. **No network calls** except NVD lookups behind the Settings toggle (off by
    default), each logged as `Event.NETWORK_REQUEST`.
-6. **Ask the user** before touching system Wi-Fi interface settings (monitor
+5. **Ask the user** before touching system Wi-Fi interface settings (monitor
    mode) or running anything with sudo/pkexec. Show the command, then confirm.
-7. **Read-only SNMP:** GET/WALK only, never SET.
+6. **Read-only SNMP:** GET/WALK only, never SET.
 
 ## Layout
 
@@ -34,24 +44,36 @@ watchtower/
   app.py                 entry point (GUI, or --check-deps for a terminal report)
   core/platform_utils.py OS detection, require_linux(), data_dir(), WIFI_UNSUPPORTED_REASON
   core/runner.py         CommandRunner: the only way to run subprocesses
-  core/deps.py           TOOLS table, check_all(), DependencyState (feature gating), install/setcap plans
+  core/deps.py           TOOLS table, find_binary() (also searches /usr/sbin etc.), check_all(),
+                         DependencyState (feature gating), install_plan()/setcap_plan() -> Plan of Steps,
+                         elevate() (pkexec), terminal_argv() (sudo-in-a-terminal fallback)
+  core/targets.py        parse_target() / in_scope(): IPs, CIDRs, nmap ranges, hostnames
+  core/interfaces.py     iw dev / iw list / ip -j addr parsing, set_mode_plan() (monitor <-> managed)
+  core/wifi_scan.py      nmcli / iwlist / airodump-ng CSV parsers, managed_scan(), airodump_argv()
+  core/nmap_runner.py    PROFILES, build() (scope-checks every target incl. extra args), parse_xml()
   storage/db.py          SQLite + MIGRATIONS list (append new entries, never edit old ones)
   storage/audit_log.py   append-only log (DB triggers block UPDATE/DELETE); Event enum
   storage/settings.py    JSON key/value settings + well-known keys
+  storage/scope.py       NetworkStore (seen APs/stations + authorized flag), TargetStore, ScanStore
   help/content.py        TAB_HELP (per-tab "What is this?") + GLOSSARY
   help/INSTALL.md        packaged copy of /INSTALL.md (test enforces they match)
   gui/context.py         AppContext (db, settings, audit, runner, deps, platform, bus)
   gui/main_window.py     tabs + Command Console dock + first-run flow
   gui/help_panel.py      TabPage = content + collapsible help panel
   gui/worker.py          run_in_background(): keep subprocesses off the GUI thread
-  gui/auth_gate.py, gui/dependency_check.py, gui/tabs/*.py
-tests/                   pytest; GUI tests run with QT_QPA_PLATFORM=offscreen
+  gui/run_dialog.py      RunPlanDialog: confirm -> run a Plan with live output; pkexec, else terminal
+  gui/dependency_check.py, gui/tabs/*.py
+tests/                   pytest; GUI tests run with QT_QPA_PLATFORM=offscreen; tool output in tests/fixtures/
 docs/SPEC.md             original build prompt (authoritative requirements)
 ```
 
 ## Conventions
 
 - `core/` and `storage/` must not import Qt; they are unit-tested headless.
+- Look up binaries with `deps.find_binary()` / `ctx.deps.path(key)` and put the absolute path in
+  argv. Never rely on PATH: Debian's non-root PATH has no /usr/sbin, where iw/airodump-ng live.
+- Anything needing root: build a `deps.Plan` and show it in `RunPlanDialog`, or wrap with
+  `deps.elevate()` after a confirmation. Never call sudo directly.
 - Linux-only modules call `require_linux("Feature name")` and the GUI shows the
   `PlatformUnsupported` message. Missing tools: gate with
   `ctx.deps.available(key)` and use `ctx.deps.reason(key)` as the tooltip.
@@ -63,22 +85,24 @@ docs/SPEC.md             original build prompt (authoritative requirements)
 - After editing `INSTALL.md`: `cp INSTALL.md watchtower/help/INSTALL.md`.
 - Before committing: `.venv/bin/ruff check watchtower tests && .venv/bin/pytest -q`.
 
-## Commitments already promised in UI/docs (must be honored by later steps)
+## Known gaps / notes for later steps
 
-- Step 2: switching an interface to monitor mode asks first (it drops the Wi-Fi connection).
-- Step 3: pass `--privileged` to nmap when the binary has capabilities set (Linux), since
-  the setcap button in the Dependency Check tells the user this happens. On Windows, prompt to
-  relaunch elevated only when a scan type needs it, not at startup.
-- Step 3: `--script vuln` is opt-in, with the intrusiveness warning from TAB_HELP["scan"].
+- WPS status is only known from `iwlist` scans (vendor IE 00:50:F2:04); nmcli and airodump-ng CSV
+  don't report it (shown as "?"). Step 5 can add `iw dev <if> scan` (root) for WPS details.
+- Scans are stored as raw nmap XML in `scans.raw_output`; steps 4 and 8 should parse from there
+  (`nmap_runner.parse_xml`) rather than adding a second results schema unless needed.
+- Monitor-mode and airodump-ng paths are unit-tested against fixtures only; the cloud container
+  has no Wi-Fi hardware. Verify on real hardware locally.
 
 ## Build progress (update this when a step lands)
 
 - [x] 1. Skeleton, platform detection, dependency check screen, authorization gate,
         SQLite storage, audit log (+ viewer/export, command console, help panels, glossary)
-- [ ] 2. Interface detection (`iw dev`/`iw phy` → monitor-mode capability) + nearby network
-        scan (nmcli/iwlist managed; airodump-ng monitor, listen-only, parse its CSV),
-        per-network Authorized checkbox persisted in SQLite (new migration)
-- [ ] 3. nmap against a manually entered, authorized target; `-oX` XML parsing; results table
+- [x] 2. Interface detection + monitor/managed switching, nearby network scan (nmcli/iwlist,
+        airodump-ng listen with client stations), per-network Authorized checkbox, Investigate
+- [x] 3. nmap with profiles/options/free-form args, authorized-target list with scope checks,
+        live output, cancel, XML parsing, results tree, scan history, --privileged / pkexec /
+        Windows relaunch-as-admin
 - [ ] 4. Findings engine with a small bundled dataset in `watchtower/data/`, remediation,
         risk scoring, MITRE ATT&CK tags
 - [ ] 5. Wi-Fi advisor findings (open/WEP/WPA1/WPA2-PSK/WPS), advisory text only

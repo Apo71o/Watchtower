@@ -1,0 +1,21 @@
+phy#1
+	Interface wlan1
+		ifindex 5
+		wdev 0x100000001
+		addr 00:c0:ca:aa:bb:cc
+		type monitor
+		channel 6 (2437 MHz), width: 20 MHz (no HT), center1: 2437 MHz
+		txpower 20.00 dBm
+phy#0
+	Unnamed/non-netdev interface
+		wdev 0x2
+		addr 3c:a9:f4:11:22:33
+		type P2P-device
+	Interface wlan0
+		ifindex 3
+		wdev 0x1
+		addr 3c:a9:f4:11:22:33
+		ssid Home Lab
+		type managed
+		channel 36 (5180 MHz), width: 80 MHz, center1: 5210 MHz
+		txpower 22.00 dBm

@@ -8,7 +8,6 @@ from typing import Any
 from watchtower.storage.db import Database
 
 # Well-known keys
-AUTH_ACK = "authorization_ack"          # {"ts": ..., "text": ...}
 DEPS_REVIEWED = "dependency_check_seen"  # bool
 NVD_API_KEY = "nvd_api_key"
 NVD_ENABLED = "nvd_lookups_enabled"      # bool, default False (no network calls)

@@ -28,14 +28,11 @@ class PlaceholderTab(QWidget):
         lay.addWidget(self.req_lbl)
         lay.addStretch()
         ctx.bus.dependencies_changed.connect(self.refresh)
-        ctx.bus.authorization_changed.connect(lambda _: self.refresh())
         self.refresh()
 
     def refresh(self):
         if self.disabled_reason:
             reason = self.disabled_reason
-        elif not self.ctx.authorized:
-            reason = "Locked until you accept the authorization acknowledgment (Settings)."
         else:
             missing = [self.ctx.deps.reason(k) for k in self.requires if not self.ctx.deps.available(k)]
             reason = "; ".join(missing) if missing else "Not built yet."

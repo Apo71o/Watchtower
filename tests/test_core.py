@@ -96,11 +96,57 @@ def test_install_hints():
     assert deps.install_hint(nmap, OS.WINDOWS) == "winget install Insecure.Nmap"
 
 
-def test_apt_plan_dedups_and_sorts():
-    missing = [deps.ToolStatus(t, False) for t in deps.TOOLS if t.apt_package]
-    argv = deps.apt_install_argv(missing)
-    assert argv[:3] == ["apt-get", "install", "-y"]
-    assert argv[3:] == sorted(set(argv[3:]))
+def test_install_plan_linux(monkeypatch):
+    monkeypatch.setattr(deps, "is_linux", lambda: True)
+    monkeypatch.setattr(deps, "is_windows", lambda: False)
+    missing = [deps.ToolStatus(t, False) for t in deps.TOOLS if OS.LINUX in t.platforms]
+    plan = deps.install_plan(missing, python="/venv/bin/python")
+    apt = plan.steps[0]
+    assert apt.elevated and apt.argv[:2] == ["/bin/sh", "-c"]
+    assert "apt-get update" in apt.script and "apt-get install -y \"$p\"" in apt.script
+    assert "aircrack-ng" in apt.script and "nmap" in apt.script
+    pip = plan.steps[-1]
+    assert pip.argv[:4] == ["/venv/bin/python", "-m", "pip", "install"] and "sslyze" in pip.argv
+    assert any("Metasploit" in m for m in plan.manual)
+
+
+def test_install_plan_windows(monkeypatch):
+    monkeypatch.setattr(deps, "is_linux", lambda: False)
+    monkeypatch.setattr(deps, "is_windows", lambda: True)
+    missing = [deps.ToolStatus(t, False) for t in deps.TOOLS if OS.WINDOWS in t.platforms]
+    plan = deps.install_plan(missing)
+    nmap = next(s for s in plan.steps if "Insecure.Nmap" in s.argv)
+    assert "--accept-source-agreements" in nmap.argv and "--accept-package-agreements" in nmap.argv
+    npcap = next(s for s in plan.steps if "Insecure.Npcap" in s.argv)
+    assert "--interactive" in npcap.argv
+
+
+def test_apt_script_rejects_weird_package_names():
+    assert "evil" not in deps.apt_script(["nmap", "evil;rm -rf /"])
+
+
+def test_find_binary_searches_sbin(tmp_path, monkeypatch):
+    sbin = tmp_path / "sbin"
+    sbin.mkdir()
+    tool = sbin / "iwfake"
+    tool.write_text("#!/bin/sh\n")
+    tool.chmod(0o755)
+    monkeypatch.setenv("PATH", "/nonexistent")
+    monkeypatch.setattr(deps, "_extra_dirs", lambda: [sbin])
+    assert deps.find_binary("iwfake") == str(tool)
+
+
+def test_runner_stream_and_cancel(db):
+    import threading
+    runner = CommandRunner(AuditLog(db))
+    lines = []
+    res = runner.stream([sys.executable, "-c", "print('a'); print('b')"], purpose="t", on_line=lines.append)
+    assert res.ok and lines == ["a", "b"]
+    cancel = threading.Event()
+    cancel.set()
+    res = runner.stream([sys.executable, "-c", "import time; time.sleep(30)"], purpose="t", cancel=cancel)
+    assert res.exit_code != 0
+    assert '"cancelled": true' in AuditLog(db).entries()[0].detail
 
 
 def test_dependency_state_reason():
