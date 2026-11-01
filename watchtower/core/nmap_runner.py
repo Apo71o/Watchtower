@@ -261,8 +261,10 @@ class Port:
 
     @property
     def version_string(self) -> str:
-        return " ".join(x for x in (self.product, self.version, f"({self.extrainfo})" if self.extrainfo else "")
-                        if x)
+        extra = self.extrainfo
+        if extra and not (extra.startswith("(") and extra.endswith(")")):
+            extra = f"({extra})"
+        return " ".join(x for x in (self.product, self.version, extra) if x)
 
 
 @dataclass

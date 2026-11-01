@@ -158,7 +158,9 @@ docs/SPEC.md             original build prompt (authoritative requirements)
         core/scheduler.py + schedules table (migration 4), wifi_snapshots/observations recorded by
         NetworkStore.record(), What Changed tab (compare any two scans; schedules; tray notify),
         headless `watchtower --run-scheduled` + optional systemd --user timer (no root)
-- [ ] 9. Report export (HTML, optional PDF via weasyprint). Audit log viewer is already done.
+- [x] 9. core/report.py (self-contained HTML; all untrusted text html-escaped, incl. SSIDs and NSE output;
+        tiny **bold**/`code` markdown), gui/report_export.py (Findings "Export report…" + Tools menu),
+        PDF via `python -m weasyprint` or the weasyprint CLI (tested for real with WeasyPrint 61)
 - [ ] 10. Help/glossary content: ongoing alongside each step
 - [ ] 11. Live NVD lookups behind the Settings toggle
 

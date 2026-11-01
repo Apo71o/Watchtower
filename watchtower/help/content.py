@@ -112,6 +112,12 @@ only, from a built-in list plus your local Metasploit install if present; read
 from its files, never run). Those findings get +5 risk, because a public exploit
 means low effort for an attacker.
 
+**Export report** (button above, or Tools → Export report…) writes a single
+self-contained HTML file: executive summary with what to fix first, scope,
+top risks, every finding with remediation and technique explanations,
+recent changes, and a methodology appendix listing the commands that were
+run. Optionally also a PDF, via WeasyPrint (`sudo apt install weasyprint`).
+
 **Top risks** ranks each device 0-100: 6 × its worst CVSS score, plus
 weights for its findings (severity, or the Wi-Fi weakness), plus 1 per open
 port. Click a device to filter the list and see everything known about it.

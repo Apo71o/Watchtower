@@ -17,7 +17,7 @@ CVE lookups, off by default.
 
 ## Status
 
-Build steps 1-8 of 11 are done, plus one-click fixes:
+Build steps 1-9 of 11 are done, plus one-click fixes:
 
 - Dependency check with a working one-click installer (live output, password prompt or terminal)
 - **Interfaces:** wireless adapters, monitor-mode support, switch monitor/managed mode
@@ -37,9 +37,10 @@ Build steps 1-8 of 11 are done, plus one-click fixes:
 - **What Changed:** compare any two scans (ports opened/closed, versions, new/resolved findings) and
   Wi-Fi scans (evil-twin warning, security downgrades, WPS turned on); scheduled re-scans, optionally
   in the background via a systemd user timer, with desktop notifications on alerts
+- **Report export:** self-contained HTML pentest-style report (optional PDF via WeasyPrint)
 - Audit log viewer/export, command console, help panels, glossary
 
-Next: HTML/PDF report export (step 9) and live NVD lookups (step 11).
+Next: live NVD lookups behind a Settings toggle (step 11).
 
 ## Continuing development on your own machine
 

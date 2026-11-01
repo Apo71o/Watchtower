@@ -83,11 +83,14 @@ class FindingsTab(QWidget):
         self.include_unauth.setToolTip("Assess every network seen nearby, not just ones marked Authorized "
                                        "(uses only what they broadcast).")
         self.refresh_btn = QPushButton("Refresh")
+        self.export_btn = QPushButton("Export report…")
+        self.export_btn.clicked.connect(self.export_report)
         top = QHBoxLayout()
         top.addWidget(self.summary, 1)
         top.addWidget(self.include_unauth)
         top.addWidget(self.min_sev)
         top.addWidget(self.refresh_btn)
+        top.addWidget(self.export_btn)
 
         self.risks = QTableWidget(0, len(RCOLS))
         self.risks.setHorizontalHeaderLabels(RCOLS)
@@ -165,6 +168,10 @@ class FindingsTab(QWidget):
         self._msf_index: dict | None = None
         self.refresh()
         self._load_msf_index()
+
+    def export_report(self):
+        from watchtower.gui.report_export import ExportDialog
+        ExportDialog(self.ctx, self.include_unauth.isChecked(), self._msf_index, self).exec()
 
     def _load_msf_index(self):
         """Index local Metasploit module metadata once (reads files only), then refresh."""

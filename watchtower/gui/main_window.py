@@ -85,6 +85,9 @@ class MainWindow(QMainWindow):
         dep_action = QAction("Dependency Check…", self)
         dep_action.triggered.connect(self.show_dependency_check)
         tools.addAction(dep_action)
+        report_action = QAction("Export report…", self)
+        report_action.triggered.connect(lambda: self.findings_tab.export_report())
+        tools.addAction(report_action)
 
         self.statusBar().showMessage(ctx.platform.summary())
 
