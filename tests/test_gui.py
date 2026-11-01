@@ -570,11 +570,51 @@ def test_wordlist_install_actions_never_run(ctx, monkeypatch):
     monkeypatch.setattr("watchtower.gui.run_dialog.RunPlanDialog", FakeDialog)
     wp = PasswordTab(ctx).wordlists
     wp._install_rockyou()
-    assert "wordlists" in captured["cmd"] and captured.get("execed")
+    assert "rockyou" in captured["cmd"] and captured.get("execed")
+    assert "sudo" not in captured["cmd"]        # download needs no root
     wp._install_seclists()
     assert "git clone" in captured["cmd"]
     # nothing was executed as a command by clicking the buttons
     assert not [e for e in ctx.audit.entries() if e.event in ("command_start", "command_end")]
+
+
+def test_saved_wordlists_picker(ctx, tmp_path):
+    """A list you add/build is remembered and selectable in Hash Recovery without retyping."""
+    from watchtower.gui.tabs.password_tab import PasswordTab
+    tab = PasswordTab(ctx)
+    hr = tab.hashrec
+
+    def picker_paths():
+        return [hr.word_picker.itemData(i) for i in range(hr.word_picker.count())]
+
+    # bundled starter lists are already pickable
+    assert any(p and p.endswith("common-passwords.txt") for p in picker_paths())
+
+    # saving a built list (Wordlists panel) registers it and the picker refreshes
+    wp = tab.wordlists
+    wp.base_input.setPlainText("spot")
+    out = tmp_path / "built.txt"
+    import watchtower.gui.tabs.password_tab as mod
+    orig = mod.QFileDialog.getSaveFileName
+    orig_q = mod.QMessageBox.question
+    mod.QFileDialog.getSaveFileName = staticmethod(lambda *a, **k: (str(out), ""))
+    mod.QMessageBox.question = staticmethod(lambda *a, **k: mod.QMessageBox.StandardButton.No)
+    try:
+        wp._save_build()
+    finally:
+        mod.QFileDialog.getSaveFileName = orig
+        mod.QMessageBox.question = orig_q
+    assert str(out) in picker_paths()
+
+    # selecting it fills the path field (no typing)
+    idx = picker_paths().index(str(out))
+    hr._pick_wordlist(idx)
+    assert hr.word_input.text() == str(out)
+
+    # Forget removes it from the saved list
+    hr.word_picker.setCurrentIndex(idx)
+    hr._forget_wordlist()
+    assert str(out) not in picker_paths()
 
 
 def _http_server():

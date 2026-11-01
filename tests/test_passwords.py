@@ -231,5 +231,26 @@ def test_wordlist_bundled_and_plans():
     for b in bundled:
         assert b.count > 0 and b.path.is_file()
     # install plans build the documented, visible commands (never run here)
-    assert "wordlists" in wl.rockyou_plan().describe()
+    rockyou = wl.rockyou_plan("/tmp/wl").describe()
+    assert "rockyou" in rockyou and ("curl" in rockyou or "wget" in rockyou) and "sudo" not in rockyou
     assert "git clone" in wl.seclists_plan("/tmp/SecLists").describe()
+
+
+def test_wordlist_registry(tmp_path):
+    from watchtower.core import wordlist_builder as wl
+    from watchtower.storage.db import Database
+    from watchtower.storage.settings import Settings
+    settings = Settings(Database(str(tmp_path / "t.db")))
+    # bundled lists are always known
+    assert any("common-passwords" in label for label, _ in wl.known_wordlists(settings))
+    # add a user list -> becomes selectable, de-duplicated
+    p = tmp_path / "mine.txt"
+    p.write_text("a\nb\n")
+    wl.add_wordlist(settings, str(p))
+    wl.add_wordlist(settings, str(p))
+    assert wl.registered_paths(settings).count(str(p)) == 1
+    assert any(path == str(p) for _, path in wl.known_wordlists(settings))
+    # a vanished file is pruned on the next read; remove() forgets it
+    p.unlink()
+    assert not any(path == str(p) for _, path in wl.known_wordlists(settings))
+    assert str(p) not in wl.registered_paths(settings)

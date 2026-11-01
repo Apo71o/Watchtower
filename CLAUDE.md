@@ -246,6 +246,15 @@ Same rules: authorized/own targets only, ownership gate for new target types, ev
       Recovery" sets the sibling panel's wordlist path. pyproject package-data includes data/wordlists/*.txt.
       Help + glossary ("Wordlist") added. 3 core tests (test_passwords.py) + 2 GUI tests (test_gui.py,
       incl. install buttons run nothing themselves).
+      - rockyou install: the Kali/Debian 'wordlists' apt package does NOT exist on Ubuntu (user hit "Unable
+        to locate package wordlists" on 26.04). rockyou_plan(dest) now DOWNLOADS rockyou.txt from SecLists
+        (curl/wget + tar) into data_dir()/wordlists — no root, works on any distro. No apt path anymore.
+      - Saved-wordlists registry (user request): settings key WORDLISTS (list[str]); wordlist_builder
+        add_wordlist/remove_wordlist/registered_paths/known_wordlists (bundled + hash_cracker.default_wordlists()
+        + user-saved, existing-only, deduped, prunes vanished, skips .gz). Hash Recovery has a "Saved lists"
+        QComboBox + Forget; Browse/build-save/download/Use-in-Hash-Recovery all register the path and emit
+        bus.wordlists_changed (new Bus signal) so the picker refreshes. hash_cracker.default_wordlists() also
+        auto-discovers data_dir()/wordlists/*.txt. +1 core test (registry) +1 GUI test (picker).
 - [x] P2-3/4 Web Audit tab (gui/tabs/web_audit_tab.py, after Host Audit): URL list; a URL is in scope when
       its host is an authorized target (adding an out-of-scope URL asks, then TargetStore.add -> SCOPE_CHANGE).
       core/header_audit.py (requests GET, allow_redirects=False, follows redirects only to in-scope hosts,

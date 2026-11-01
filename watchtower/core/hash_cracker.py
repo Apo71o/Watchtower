@@ -204,9 +204,15 @@ def john_show_count(output: str) -> int:
 
 
 def default_wordlists() -> list[str]:
-    """Common wordlist locations, if present."""
+    """Common wordlist locations, if present — standard system paths plus any
+    the user has built/downloaded into Watchtower's own data/wordlists folder."""
+    from watchtower.core.platform_utils import data_dir
     candidates = [
         "/usr/share/wordlists/rockyou.txt", "/usr/share/wordlists/rockyou.txt.gz",
         "/usr/share/john/password.lst", "/usr/share/dict/words", "/usr/share/wordlists/fasttrack.txt",
     ]
-    return [c for c in candidates if Path(c).is_file() and (shutil.which("gzip") or not c.endswith(".gz"))]
+    out = [c for c in candidates if Path(c).is_file() and (shutil.which("gzip") or not c.endswith(".gz"))]
+    app_dir = data_dir() / "wordlists"
+    if app_dir.is_dir():
+        out += [str(p) for p in sorted(app_dir.glob("*.txt")) if str(p) not in out]
+    return out

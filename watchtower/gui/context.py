@@ -41,6 +41,7 @@ class Bus(QObject):
     captures_changed = Signal()              # a traffic capture finished / was deleted
     settings_changed = Signal(str)           # a preference changed (key); "*" after reset to defaults
     dependencies_changed = Signal()
+    wordlists_changed = Signal()             # the saved-wordlists list changed (Password Tools)
 
 
 @dataclass

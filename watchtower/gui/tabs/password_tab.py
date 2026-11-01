@@ -456,15 +456,19 @@ class HashRecoveryPanel(QWidget):
         self.hash_browse = QPushButton("Browse…")
         tip(self.hash_browse, "Choose the hash file.")
 
+        self.word_picker = QComboBox()
+        tip(self.word_picker, ("Pick one of your saved wordlists — lists you've built, downloaded or added in the "
+                               "Wordlists tab. Choosing one fills in the path below, so you don't retype it."))
         self.word_input = QLineEdit()
-        wordlists = hc.default_wordlists()
-        if wordlists:
-            self.word_input.setText(wordlists[0])
         self.word_input.setPlaceholderText("wordlist (dictionary) file, e.g. /usr/share/wordlists/rockyou.txt")
         tip(self.word_input, ("A wordlist of candidate passwords to try (a dictionary attack). Your own file; nothing "
                               "is sent anywhere."))
         self.word_browse = QPushButton("Browse…")
-        tip(self.word_browse, "Choose the wordlist file.")
+        tip(self.word_browse, ("Choose a wordlist file. It's remembered in your saved lists so you can pick it next "
+                               "time."))
+        self.word_forget = QPushButton("Forget")
+        tip(self.word_forget, ("Remove the selected saved wordlist from the list above (the file itself is not "
+                               "deleted)."))
 
         self.rules_input = QLineEdit()
         self.rules_input.setPlaceholderText("optional: rules file (hashcat -r) or a John rule name")
@@ -494,6 +498,10 @@ class HashRecoveryPanel(QWidget):
         hrow.addWidget(self.hash_input, 1)
         hrow.addWidget(self.hash_browse)
         form.addRow("Hash file:", hrow)
+        prow = QHBoxLayout()
+        prow.addWidget(self.word_picker, 1)
+        prow.addWidget(self.word_forget)
+        form.addRow("Saved lists:", prow)
         wrow = QHBoxLayout()
         wrow.addWidget(self.word_input, 1)
         wrow.addWidget(self.word_browse)
@@ -528,9 +536,39 @@ class HashRecoveryPanel(QWidget):
 
         self.hash_browse.clicked.connect(self._browse_hash)
         self.word_browse.clicked.connect(self._browse_word)
+        self.word_picker.activated.connect(self._pick_wordlist)
+        self.word_forget.clicked.connect(self._forget_wordlist)
         self.own_box.toggled.connect(self._update_enabled)
         self.gen_btn.clicked.connect(self._generate)
         self.copy_btn.clicked.connect(self._copy)
+        self.ctx.bus.wordlists_changed.connect(self._refresh_wordlists)
+        self._refresh_wordlists()
+
+    def _refresh_wordlists(self):
+        self.word_picker.blockSignals(True)
+        self.word_picker.clear()
+        self.word_picker.addItem("— choose a saved wordlist —", "")
+        known = wl.known_wordlists(self.ctx.settings)
+        for label, path in known:
+            self.word_picker.addItem(label, path)
+        cur = self.word_input.text().strip()
+        if not cur and known:                       # sensible default on first open
+            cur = known[0][1]
+            self.word_input.setText(cur)
+        match = next((i for i in range(self.word_picker.count()) if self.word_picker.itemData(i) == cur), 0)
+        self.word_picker.setCurrentIndex(match)
+        self.word_picker.blockSignals(False)
+
+    def _pick_wordlist(self, index: int):
+        path = self.word_picker.itemData(index)
+        if path:
+            self.word_input.setText(path)
+
+    def _forget_wordlist(self):
+        path = self.word_picker.currentData()
+        if path:
+            wl.remove_wordlist(self.ctx.settings, path)
+            self.ctx.bus.wordlists_changed.emit()
 
     def _update_enabled(self):
         have_tool = bool(hc.available_tools())
@@ -548,6 +586,8 @@ class HashRecoveryPanel(QWidget):
         path, _ = QFileDialog.getOpenFileName(self, "Wordlist")
         if path:
             self.word_input.setText(path)
+            wl.add_wordlist(self.ctx.settings, path)
+            self.ctx.bus.wordlists_changed.emit()
 
     def _extractor_hint(self, htype: hc.HashType) -> str | None:
         """For document hash types, the one-off *2john command to produce the hash file."""
@@ -602,8 +642,10 @@ class HashRecoveryPanel(QWidget):
             QGuiApplication.clipboard().setText(format_command(self._job.argv))
 
     def set_wordlist(self, path: str):
-        """Fill in the wordlist path (used by the Wordlists panel)."""
+        """Fill in the wordlist path and remember it (used by the Wordlists panel)."""
         self.word_input.setText(path)
+        wl.add_wordlist(self.ctx.settings, path)
+        self.ctx.bus.wordlists_changed.emit()
 
 
 # --------------------------------------------------------------------------- #
@@ -761,8 +803,10 @@ class WordlistPanel(QWidget):
         except OSError as exc:
             QMessageBox.warning(self, "Couldn't save", str(exc))
             return
+        wl.add_wordlist(self.ctx.settings, path)       # remember it for the picker
+        self.ctx.bus.wordlists_changed.emit()
         cap = " (list was capped — raise Max entries for more)" if truncated else ""
-        self.build_count.setText(f"Saved {n:,} entries to {path}{cap}.")
+        self.build_count.setText(f"Saved {n:,} entries to {path}{cap} — added to your saved lists.")
         if self._on_use and QMessageBox.question(
                 self, "Use this list?", f"Saved {n:,} entries.\n\nUse it in Hash Recovery now?"
         ) == QMessageBox.StandardButton.Yes:
@@ -904,13 +948,13 @@ class WordlistPanel(QWidget):
     def _install_group(self) -> QGroupBox:
         box = QGroupBox("Get more wordlists")
         note = QLabel("These download standard public wordlists. Watchtower shows the exact command first and logs "
-                      "it — nothing is downloaded silently. Once rockyou is installed, Hash Recovery fills it in "
-                      "automatically.")
+                      "it — nothing is downloaded silently. Downloaded lists are added to your saved lists, so Hash "
+                      "Recovery can pick them without retyping a path.")
         note.setWordWrap(True)
         note.setStyleSheet("color: #757575;")
-        self.rockyou_btn = QPushButton("Install rockyou (apt)…")
-        tip(self.rockyou_btn, "Install your distro's 'wordlists' package (provides rockyou) via a shown, logged "
-                              "command. Needs your password.")
+        self.rockyou_btn = QPushButton("Download rockyou…")
+        tip(self.rockyou_btn, "Download the rockyou list from SecLists into your data folder (no password needed). "
+                              "Works on any distro — it doesn't rely on a system package.")
         self.seclists_btn = QPushButton("Download SecLists (git)…")
         tip(self.seclists_btn, "Clone the SecLists collection into your data folder with git. No password needed; "
                                "it is large.")
@@ -930,10 +974,19 @@ class WordlistPanel(QWidget):
         RunPlanDialog(self.ctx, title, intro, plan, self).exec()
 
     def _install_rockyou(self):
-        intro = ("This installs the 'wordlists' package from your OS package repository (which provides the rockyou "
-                 "list) and unpacks it to /usr/share/wordlists. The command is shown below and written to the audit "
-                 "log; you'll be asked for your password.")
-        self._run_plan("Install rockyou", intro, wl.rockyou_plan())
+        dest = str(data_dir() / "wordlists")
+        intro = (f"This downloads the rockyou list from SecLists into {dest} (no password needed) and unpacks it. "
+                 "The command is shown below and written to the audit log. It works on any distro — it does not rely "
+                 "on a system 'wordlists' package, which Ubuntu doesn't provide.")
+        self._run_plan("Download rockyou", intro, wl.rockyou_plan(dest))
+        rockyou = Path(dest) / "rockyou.txt"
+        if rockyou.is_file():
+            wl.add_wordlist(self.ctx.settings, str(rockyou))
+            self.ctx.bus.wordlists_changed.emit()
+            if self._on_use and QMessageBox.question(
+                    self, "Use rockyou?", "rockyou.txt is ready and added to your saved lists.\n\n"
+                    "Use it in Hash Recovery now?") == QMessageBox.StandardButton.Yes:
+                self._on_use(str(rockyou))
 
     def _install_seclists(self):
         dest = str(data_dir() / "wordlists" / "SecLists")

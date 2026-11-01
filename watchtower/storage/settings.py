@@ -15,6 +15,7 @@ THEME = "theme"                          # "system" | "light" | "dark"
 SCHED_BACKGROUND = "schedules_background_timer"  # bool: systemd user timer runs schedules
 CONSOLE_VISIBLE = "command_console_visible"  # bool, default True
 RETENTION_DAYS = "retention_days"        # int: delete scans/snapshots/audits older than this (0 = keep all)
+WORDLISTS = "wordlists"                  # list[str]: paths the user has saved for Password Tools
 
 
 class Settings:

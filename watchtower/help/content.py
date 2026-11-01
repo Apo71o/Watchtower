@@ -335,6 +335,8 @@ files and any recovered passwords stay on this machine; only the generated
 command and the hash-file path are written to the audit log.
 
 **Wordlists**: make and manage the candidate-password lists Hash Recovery uses.
+Lists you build, download or add are **saved**, so you can pick them from the
+"Saved lists" drop-down in Hash Recovery instead of retyping a path.
 - **Build a targeted list**: enter words about the target (names, dates, pets,
   keywords) and Watchtower produces the variations an attacker would try —
   case changes, leet-speak, appended numbers/years/symbols, joined pairs. It is
@@ -344,8 +346,9 @@ command and the hash-file path are written to the audit log.
   a copy.
 - **Combine / clean up**: merge several lists into one, dropping blank lines and
   (optionally) duplicates, and sort.
-- **Get more wordlists**: install the big standard public lists (rockyou via your
-  OS package manager, or SecLists via git). These are the only actions here that
+- **Get more wordlists**: download the big standard public lists — rockyou (from
+  SecLists, no password or system package needed, so it works on any distro) or
+  the whole SecLists collection (via git). These are the only actions here that
   use the network, and — like everything else in Watchtower — the exact command
   is shown first and written to the audit log; nothing downloads silently.
 """,

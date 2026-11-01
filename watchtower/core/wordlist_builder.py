@@ -13,11 +13,14 @@ passwords. You feed it to the Hash Recovery command, which you run yourself.
 
 from __future__ import annotations
 
+import os
+import shlex
 from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
 
-from watchtower.core import deps
+from watchtower.core import deps, hash_cracker
+from watchtower.storage.settings import WORDLISTS, Settings
 
 # Letter -> leet replacement used when the "leet-speak" option is on. One
 # substitution per letter keeps the output bounded (no combinatorial blow-up).
@@ -170,17 +173,23 @@ def bundled_wordlists() -> list[BundledList]:
 # Installing the big standard lists (shown + logged, never silent)            #
 # --------------------------------------------------------------------------- #
 
-ROCKYOU_PATH = "/usr/share/wordlists/rockyou.txt"
 SECLISTS_URL = "https://github.com/danielmiessler/SecLists"
+ROCKYOU_URL = SECLISTS_URL + "/raw/master/Passwords/Leaked-Databases/rockyou.txt.tar.gz"
 
 
-def rockyou_plan() -> deps.Plan:
-    """Install Debian/Kali's 'wordlists' package (provides rockyou) and unpack it."""
-    script = ("export DEBIAN_FRONTEND=noninteractive; apt-get update; apt-get install -y wordlists; "
-              f"gunzip -kf {ROCKYOU_PATH}.gz 2>/dev/null || true; ls -l {ROCKYOU_PATH} 2>/dev/null || "
-              'echo "rockyou not found; your distro may package it elsewhere"')
-    return deps.Plan([deps.Step("Install the 'wordlists' package (provides rockyou) and unpack it",
-                                ["sh", "-c", script], elevated=True, script=script)], [])
+def rockyou_plan(dest_dir: str) -> deps.Plan:
+    """Download rockyou.txt from SecLists into `dest_dir`. No root and no distro
+    package needed (Ubuntu doesn't ship the Kali 'wordlists' package); just curl
+    or wget plus disk space. The resulting path is dest_dir/rockyou.txt."""
+    d = shlex.quote(dest_dir)
+    script = (
+        f"set -e; mkdir -p {d}; cd {d}; "
+        f'if command -v curl >/dev/null 2>&1; then curl -fL -o rockyou.txt.tar.gz "{ROCKYOU_URL}"; '
+        f'elif command -v wget >/dev/null 2>&1; then wget -O rockyou.txt.tar.gz "{ROCKYOU_URL}"; '
+        'else echo "Need curl or wget to download rockyou."; exit 1; fi; '
+        "tar -xzf rockyou.txt.tar.gz; rm -f rockyou.txt.tar.gz; ls -l rockyou.txt"
+    )
+    return deps.Plan([deps.Step("Download rockyou.txt from SecLists", ["sh", "-c", script], script=script)], [])
 
 
 def seclists_plan(dest: str) -> deps.Plan:
@@ -188,3 +197,69 @@ def seclists_plan(dest: str) -> deps.Plan:
     No root needed; just git and disk space."""
     return deps.Plan([deps.Step(f"Clone SecLists into {dest}",
                                 ["git", "clone", "--depth", "1", SECLISTS_URL, dest])], [])
+
+
+# --------------------------------------------------------------------------- #
+# Saved-wordlists registry (so paths don't have to be retyped)                #
+# --------------------------------------------------------------------------- #
+
+def registered_paths(settings: Settings) -> list[str]:
+    return [str(p) for p in (settings.get(WORDLISTS, []) or [])]
+
+
+def add_wordlist(settings: Settings, path: str) -> None:
+    """Remember a wordlist path so it can be picked later (no duplicates)."""
+    path = str(Path(path).expanduser())
+    cur = registered_paths(settings)
+    if path not in cur:
+        settings.set(WORDLISTS, cur + [path])
+
+
+def remove_wordlist(settings: Settings, path: str) -> None:
+    settings.set(WORDLISTS, [p for p in registered_paths(settings) if p != str(Path(path).expanduser())])
+
+
+def _human_size(path: str) -> str:
+    try:
+        n: float = os.path.getsize(path)
+    except OSError:
+        return "?"
+    for unit in ("B", "KB", "MB", "GB"):
+        if n < 1024 or unit == "GB":
+            return f"{n:.0f} {unit}"
+        n /= 1024
+    return f"{n:.0f} TB"
+
+
+def known_wordlists(settings: Settings) -> list[tuple[str, str]]:
+    """(label, path) for every selectable wordlist: bundled starter lists, the
+    standard auto-detected ones, and whatever the user saved — existing files
+    only, de-duplicated. Prunes saved paths whose file has gone. Skips .gz
+    (the recovery tools need an uncompressed list)."""
+    out: list[tuple[str, str]] = []
+    seen: set[str] = set()
+
+    def add(path, tag: str = ""):
+        p = str(path)
+        if p.endswith(".gz") or not Path(p).is_file():
+            return
+        try:
+            key = str(Path(p).resolve())
+        except OSError:
+            key = p
+        if key in seen:
+            return
+        seen.add(key)
+        label = f"{Path(p).name} ({_human_size(p)})" + (f" — {tag}" if tag else "")
+        out.append((label, p))
+
+    for b in bundled_wordlists():
+        add(b.path, "included")
+    for w in hash_cracker.default_wordlists():
+        add(w)
+    existing = [p for p in registered_paths(settings) if Path(p).is_file()]
+    if existing != registered_paths(settings):
+        settings.set(WORDLISTS, existing)   # prune vanished ones
+    for p in existing:
+        add(p)
+    return out
