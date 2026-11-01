@@ -152,7 +152,24 @@ this becomes continuous monitoring of your own network.
 **Why it matters:** an unexpected new port or device is often the first sign
 of a misconfiguration or compromise.
 
-*Status: implemented in build step 8.*
+**Reading it:** pick a target (or *Wi-Fi nearby*) on the left and two scans to
+compare; the newest two are preselected. Levels:
+- **alert**: likely needs action. A port opened, a new finding appeared, a
+  different device now answers at an address, your network got weaker
+  security or WPS was turned back on, or a **new access point is using your
+  network's name** (a possible evil twin, unless you just added a mesh node).
+- **notice**: worth a look (new host, service or version changed, your
+  network not seen).
+- **good**: something was fixed: port closed, finding resolved, software updated.
+- **info**: background changes (new neighbours' networks, OS guess changed).
+
+**Scheduled scans** re-run a profile against an authorized target hourly to
+weekly while Watchtower is open. Tick *Keep running scheduled scans when
+Watchtower is closed* to install a systemd **user** timer (no root) that runs
+due scans every 15 minutes and sends a desktop notification on alerts.
+Schedules skip targets you've removed from the authorized list, and
+profiles that need root (e.g. Intense scan) unless nmap has been granted
+capabilities.
 """,
 "audit_log": """
 ### Audit Log

@@ -14,6 +14,8 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--version", action="version", version=f"{APP_NAME} {__version__}")
     parser.add_argument("--check-deps", action="store_true",
                         help="print the dependency check to the terminal and exit (no GUI)")
+    parser.add_argument("--run-scheduled", action="store_true",
+                        help="run any due scheduled scans and exit (used by the background timer)")
     args = parser.parse_args(argv)
 
     from watchtower.core import deps
@@ -34,6 +36,9 @@ def main(argv: list[str] | None = None) -> int:
             hint = "" if s.present else f"   -> {s.install_hint}"
             print(f"{mark}{s.tool.name}{ver}{hint}")
         return 0
+
+    if args.run_scheduled:
+        return run_scheduled_headless(db)
 
     from PySide6.QtCore import QTimer
     from PySide6.QtWidgets import QApplication
@@ -76,6 +81,30 @@ def main(argv: list[str] | None = None) -> int:
         sys.stderr.flush()
         os._exit(code)
     return code
+
+
+def run_scheduled_headless(db) -> int:
+    """Run due schedules without a GUI; desktop-notify on alerts (notify-send, if present)."""
+    from watchtower.core import deps, scheduler
+    from watchtower.core.runner import CommandRunner
+    from watchtower.storage.audit_log import AuditLog, Event
+    from watchtower.storage.scope import ScanStore, ScheduleStore, TargetStore
+
+    audit = AuditLog(db)
+    audit.append(Event.APP_START, detail={"mode": "scheduled scans (headless)"})
+    runner = CommandRunner(audit)
+    results = scheduler.run_due(runner, TargetStore(db, audit), ScanStore(db), ScheduleStore(db, audit))
+    for r in results:
+        print(f"#{r.schedule_id} {r.target}: {r.status}")
+        for c in r.changes:
+            print(f"   [{c.level}] {c.title} {c.detail}")
+    alerts = [(r, c) for r in results for c in r.alerts]
+    notify = deps.find_binary("notify-send")
+    if alerts and notify:
+        body = "\n".join(f"{r.target}: {c.title}" for r, c in alerts[:6])
+        runner.run([notify, "-a", "Watchtower", f"Watchtower: {len(alerts)} alert(s)", body],
+                   purpose="desktop notification", timeout=10)
+    return 0
 
 
 if __name__ == "__main__":

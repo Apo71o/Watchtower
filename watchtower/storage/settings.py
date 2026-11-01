@@ -12,6 +12,7 @@ DEPS_REVIEWED = "dependency_check_seen"  # bool
 NVD_API_KEY = "nvd_api_key"
 NVD_ENABLED = "nvd_lookups_enabled"      # bool, default False (no network calls)
 THEME = "theme"                          # "system" | "light" | "dark"
+SCHED_BACKGROUND = "schedules_background_timer"  # bool: systemd user timer runs schedules
 
 
 class Settings:

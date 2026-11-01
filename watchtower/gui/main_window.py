@@ -4,7 +4,7 @@ from datetime import datetime
 
 from PySide6.QtCore import Qt
 from PySide6.QtGui import QAction
-from PySide6.QtWidgets import QDockWidget, QMainWindow, QPlainTextEdit, QTabWidget
+from PySide6.QtWidgets import QDockWidget, QMainWindow, QPlainTextEdit, QStyle, QSystemTrayIcon, QTabWidget
 
 from watchtower import APP_NAME, __version__
 from watchtower.core.platform_utils import WIFI_UNSUPPORTED_REASON
@@ -12,12 +12,12 @@ from watchtower.gui.context import AppContext
 from watchtower.gui.dependency_check import DependencyDialog
 from watchtower.gui.help_panel import TabPage
 from watchtower.gui.tabs.audit_log_tab import AuditLogTab
+from watchtower.gui.tabs.changes_tab import ChangesTab
 from watchtower.gui.tabs.findings_tab import FindingsTab
 from watchtower.gui.tabs.help_tab import HelpTab
 from watchtower.gui.tabs.host_audit_tab import HostAuditTab
 from watchtower.gui.tabs.interfaces_tab import InterfacesTab
 from watchtower.gui.tabs.nearby_tab import NearbyTab
-from watchtower.gui.tabs.placeholder import PlaceholderTab
 from watchtower.gui.tabs.scan_tab import ScanTab
 from watchtower.gui.tabs.settings_tab import SettingsTab
 from watchtower.storage.settings import DEPS_REVIEWED
@@ -54,8 +54,8 @@ class MainWindow(QMainWindow):
         self.pages["findings"].help.toggle.setChecked(False)   # the detail pane explains each finding
         self.host_audit_tab = HostAuditTab(ctx)
         add("host_audit", "Host Audit", self.host_audit_tab)
-        add("changes", "What Changed",
-            PlaceholderTab(ctx, "What Changed", "step 8", ["nmap"], "Compare scans"))
+        self.changes_tab = ChangesTab(ctx)
+        add("changes", "What Changed", self.changes_tab)
         self.audit_tab = AuditLogTab(ctx)
         add("audit_log", "Audit Log", self.audit_tab)
         self.help_tab = HelpTab(ctx)
@@ -87,6 +87,16 @@ class MainWindow(QMainWindow):
         tools.addAction(dep_action)
 
         self.statusBar().showMessage(ctx.platform.summary())
+
+    def notify(self, title: str, message: str):
+        """Desktop notification (tray balloon where available) plus the status bar."""
+        self.statusBar().showMessage(f"{title}: {message}", 30000)
+        if QSystemTrayIcon.isSystemTrayAvailable():
+            if not hasattr(self, "_tray"):
+                self._tray = QSystemTrayIcon(self.windowIcon() or self.style().standardIcon(
+                    QStyle.StandardPixmap.SP_MessageBoxWarning), self)
+                self._tray.show()
+            self._tray.showMessage(title, message, QSystemTrayIcon.MessageIcon.Warning, 10000)
 
     def _show_command(self, command: str, purpose: str):
         ts = datetime.now().strftime("%H:%M:%S")

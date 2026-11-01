@@ -11,7 +11,7 @@ from watchtower.core.platform_utils import PlatformInfo
 from watchtower.core.runner import CommandRunner
 from watchtower.storage.audit_log import AuditLog, Entry
 from watchtower.storage.db import Database
-from watchtower.storage.scope import HostAuditStore, NetworkStore, ScanStore, TargetStore
+from watchtower.storage.scope import HostAuditStore, NetworkStore, ScanStore, ScheduleStore, TargetStore
 from watchtower.storage.settings import Settings
 
 
@@ -42,6 +42,7 @@ class AppContext:
     targets: TargetStore
     scans: ScanStore
     audits: HostAuditStore
+    schedules: ScheduleStore
 
     @classmethod
     def create(cls, db: Database, platform: PlatformInfo) -> AppContext:
@@ -52,7 +53,8 @@ class AppContext:
         audit.subscribe(lambda e: bus.audit_appended.emit(e))
         runner.on_command(lambda cmd, purpose: bus.command_started.emit(cmd, purpose))
         return cls(db, settings, audit, runner, DependencyState(), platform, bus,
-                   NetworkStore(db, audit), TargetStore(db, audit), ScanStore(db), HostAuditStore(db))
+                   NetworkStore(db, audit), TargetStore(db, audit), ScanStore(db), HostAuditStore(db),
+                   ScheduleStore(db, audit))
 
 
 __all__ = ["AppContext", "Bus", "Entry"]

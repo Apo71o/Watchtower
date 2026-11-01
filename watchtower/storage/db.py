@@ -105,6 +105,36 @@ MIGRATIONS: list[str] = [
     );
     CREATE INDEX host_audits_host ON host_audits(host, kind, port, id);
     """,
+    # 4: history (Wi-Fi snapshots) and scheduled scans
+    """
+    CREATE TABLE wifi_snapshots (
+        id          INTEGER PRIMARY KEY AUTOINCREMENT,
+        ts          TEXT NOT NULL,
+        source      TEXT NOT NULL              -- "managed" | "airodump-ng"
+    );
+    CREATE TABLE wifi_observations (
+        snapshot_id INTEGER NOT NULL REFERENCES wifi_snapshots(id) ON DELETE CASCADE,
+        bssid TEXT NOT NULL, ssid TEXT, channel INTEGER, signal_dbm INTEGER, signal_pct INTEGER,
+        security TEXT, auth TEXT, cipher TEXT, wps INTEGER,
+        PRIMARY KEY (snapshot_id, bssid)
+    );
+    CREATE TABLE schedules (
+        id               INTEGER PRIMARY KEY AUTOINCREMENT,
+        target           TEXT NOT NULL,
+        profile          TEXT NOT NULL,
+        scan_type        TEXT,
+        extra            TEXT NOT NULL DEFAULT '',
+        os_detect        INTEGER NOT NULL DEFAULT 0,
+        vuln             INTEGER NOT NULL DEFAULT 0,
+        interval_minutes INTEGER NOT NULL,
+        enabled          INTEGER NOT NULL DEFAULT 1,
+        created          TEXT NOT NULL,
+        last_run         TEXT,
+        next_run         TEXT NOT NULL,
+        last_status      TEXT
+    );
+    ALTER TABLE scans ADD COLUMN schedule_id INTEGER;
+    """,
 ]
 
 

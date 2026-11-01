@@ -294,3 +294,29 @@ def test_findings_fix_buttons(ctx):
     tab._apply_fix(next(a for a in tab.fix_actions if a.kind == "rescan"),
                    next(f for f in tab.shown if f.cve_id == "CVE-2024-6387"))
     assert got == ["127.0.0.1"] and ctx.audit.entries()[0].event == "remediation"
+
+
+def test_changes_tab_compares_scans_and_wifi(ctx):
+    from watchtower.core import wifi_scan
+    from watchtower.gui.tabs.changes_tab import ChangesTab
+    lab = (FX / "nmap_lab.xml").read_text()
+    for xml in (lab.replace('<port protocol="tcp" portid="23">', '<port protocol="tcp" portid="2323">'), lab):
+        sid = ctx.scans.start("nmap", "192.168.56.101", "nmap ...")
+        ctx.scans.finish(sid, 0, xml)
+    aps = wifi_scan.parse_iw_scan((FX / "iw_scan.txt").read_text())
+    ctx.networks.record(aps[:3], source="iw")
+    ctx.networks.set_authorized("AA:BB:CC:00:00:01", True)
+    ctx.networks.record(aps, source="iw")
+    tab = ChangesTab(ctx)
+    assert tab.sources.count() == 2
+    tab.sources.setCurrentRow(1)
+    texts = [tab.table.item(r, 2).text() for r in range(tab.table.rowCount())]
+    assert "Port opened: 23/tcp" in texts and "Port closed: 2323/tcp" in texts
+    tab.sources.setCurrentRow(0)
+    assert tab.table.rowCount() == 3 and "New network nearby" in tab.table.item(0, 2).text()
+    ctx.targets.add("192.168.56.0/24")
+    ctx.bus.targets_changed.emit()
+    tab._add_schedule()
+    assert tab.sched_table.rowCount() == 1 and tab.sched_table.item(0, 1).text() == "192.168.56.0/24"
+    tab.sched_table.item(0, 0).setCheckState(Qt.CheckState.Unchecked)
+    assert ctx.schedules.all()[0]["enabled"] == 0

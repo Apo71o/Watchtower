@@ -17,7 +17,7 @@ CVE lookups, off by default.
 
 ## Status
 
-Build steps 1-7 of 11 are done, plus one-click fixes:
+Build steps 1-8 of 11 are done, plus one-click fixes:
 
 - Dependency check with a working one-click installer (live output, password prompt or terminal)
 - **Interfaces:** wireless adapters, monitor-mode support, switch monitor/managed mode
@@ -34,9 +34,12 @@ Build steps 1-7 of 11 are done, plus one-click fixes:
 - **One-click fixes** from Findings: security updates or disabling a risky service on this machine,
   the same over SSH for your other Linux hosts, or open the device's admin page; then re-scan
 - **Public exploit** flag: CVEs with ready-made Metasploit modules (names only) rank higher
+- **What Changed:** compare any two scans (ports opened/closed, versions, new/resolved findings) and
+  Wi-Fi scans (evil-twin warning, security downgrades, WPS turned on); scheduled re-scans, optionally
+  in the background via a systemd user timer, with desktop notifications on alerts
 - Audit log viewer/export, command console, help panels, glossary
 
-What Changed (history diff + scheduler) is next (step 8), then reports and NVD lookups.
+Next: HTML/PDF report export (step 9) and live NVD lookups (step 11).
 
 ## Continuing development on your own machine
 

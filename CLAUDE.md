@@ -67,7 +67,7 @@ watchtower/
   gui/help_panel.py      TabPage = content + collapsible help panel
   gui/worker.py          run_in_background(): keep subprocesses off the GUI thread
   gui/run_dialog.py      RunPlanDialog: confirm -> run a Plan with live output; pkexec, else terminal
-  gui/dependency_check.py, gui/tabs/*.py
+  gui/dependency_check.py, gui/tabs/*.py (all tabs implemented; placeholder.py was removed)
 tests/                   pytest; GUI tests run with QT_QPA_PLATFORM=offscreen; tool output in tests/fixtures/
 docs/SPEC.md             original build prompt (authoritative requirements)
 ```
@@ -124,6 +124,9 @@ docs/SPEC.md             original build prompt (authoritative requirements)
   listener (it refuses, correctly); disabling an actual systemd unit is untested here (no systemd
   in the cloud container), so verify on the user's machine. The local apt upgrade path was run
   for real (snmpd).
+- Scheduler: GUI ticks every 60 s unless settings SCHED_BACKGROUND is on (then the systemd timer owns
+  runs, to avoid double scans). Scheduled scans never prompt for root: they're skipped with a
+  status instead. The systemd timer install path is untested here (no systemd in the container).
 - Monitor-mode and airodump-ng paths are unit-tested against fixtures only; the cloud container
   has no Wi-Fi hardware. Verify on real hardware locally.
 
@@ -151,7 +154,10 @@ docs/SPEC.md             original build prompt (authoritative requirements)
 - [x] 7. core/exploit_xref.py: bundled CVE->module list + index of local Metasploit module files
         (reads 'References'/'Name'/Rank from .rb, cached in data_dir/msf_index.json; never runs msf);
         Finding.exploits, +5 weight (assessment.EXPLOIT_WEIGHT), "Public exploit" column + details
-- [ ] 8. History diff ("What Changed") + scheduler
+- [x] 8. core/history_diff.py (host/scan/Wi-Fi diffs incl. new/resolved findings, evil-twin alert),
+        core/scheduler.py + schedules table (migration 4), wifi_snapshots/observations recorded by
+        NetworkStore.record(), What Changed tab (compare any two scans; schedules; tray notify),
+        headless `watchtower --run-scheduled` + optional systemd --user timer (no root)
 - [ ] 9. Report export (HTML, optional PDF via weasyprint). Audit log viewer is already done.
 - [ ] 10. Help/glossary content: ongoing alongside each step
 - [ ] 11. Live NVD lookups behind the Settings toggle

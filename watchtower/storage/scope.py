@@ -19,10 +19,19 @@ class NetworkStore:
     def __init__(self, db: Database, audit: AuditLog):
         self.db, self.audit = db, audit
 
-    def record(self, aps, stations=(), source: str = "") -> None:
+    def record(self, aps, stations=(), source: str = "") -> int:
         """Upsert observations from a scan. `aps` are wifi_scan.AccessPoint,
-        `stations` wifi_scan.Station. Never touches the authorized flag."""
+        `stations` wifi_scan.Station. Never touches the authorized flag. Also
+        stores a snapshot for history diffs; returns its id."""
         ts = now()
+        kind = "airodump-ng" if source == "airodump-ng" else "managed"
+        snap = self.db.execute("INSERT INTO wifi_snapshots(ts, source) VALUES (?, ?)", (ts, kind)).lastrowid
+        for ap in aps:
+            self.db.execute(
+                "INSERT OR REPLACE INTO wifi_observations(snapshot_id, bssid, ssid, channel, signal_dbm, signal_pct, "
+                "security, auth, cipher, wps) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                (snap, ap.bssid, ap.ssid, ap.channel, ap.signal_dbm, ap.signal_pct, ap.security, ap.auth, ap.cipher,
+                 ap.wps))
         for ap in aps:
             self.db.execute(
                 """INSERT INTO networks(bssid, ssid, channel, freq, signal_dbm, signal_pct, security, cipher,
@@ -50,6 +59,22 @@ class NetworkStore:
                      packets = excluded.packets, probes = excluded.probes, last_seen = excluded.last_seen""",
                 (st.mac, st.bssid, st.power, st.packets, ",".join(st.probes), ts, ts),
             )
+        return snap
+
+    def snapshots(self, limit: int = 100) -> list[dict]:
+        return [dict(r) for r in self.db.query(
+            "SELECT s.*, (SELECT COUNT(*) FROM wifi_observations o WHERE o.snapshot_id = s.id) AS count "
+            "FROM wifi_snapshots s ORDER BY id DESC LIMIT ?", (limit,))]
+
+    def snapshot(self, snap_id: int) -> dict[str, dict]:
+        return {r["bssid"]: dict(r) for r in self.db.query(
+            "SELECT * FROM wifi_observations WHERE snapshot_id = ?", (snap_id,))}
+
+    def authorized_ssids(self) -> set[str]:
+        return {r["ssid"] for r in self.db.query("SELECT ssid FROM networks WHERE authorized = 1 AND ssid != ''")}
+
+    def authorized_bssids(self) -> set[str]:
+        return {r["bssid"] for r in self.db.query("SELECT bssid FROM networks WHERE authorized = 1")}
 
     def all(self) -> list[dict]:
         rows = self.db.query(
@@ -132,13 +157,70 @@ class HostAuditStore:
         return [dict(r) for r in self.db.query(sql + " ORDER BY host, kind, port", params)]
 
 
+class ScheduleStore:
+    def __init__(self, db: Database, audit: AuditLog):
+        self.db, self.audit = db, audit
+
+    def add(self, target: str, profile: str, interval_minutes: int, scan_type: str | None = None, extra: str = "",
+            os_detect: bool = False, vuln: bool = False) -> int:
+        parse_target(target)
+        sid = self.db.execute(
+            "INSERT INTO schedules(target, profile, scan_type, extra, os_detect, vuln, interval_minutes, created, "
+            "next_run) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            (target, profile, scan_type, extra, int(os_detect), int(vuln), int(interval_minutes), now(), now()),
+        ).lastrowid
+        self.audit.append(Event.SCOPE_CHANGE, target=target,
+                          detail={"schedule": "added", "id": sid, "profile": profile,
+                                  "every_minutes": interval_minutes})
+        return sid
+
+    def all(self) -> list[dict]:
+        return [dict(r) for r in self.db.query("SELECT * FROM schedules ORDER BY id")]
+
+    def get(self, sid: int) -> dict | None:
+        rows = self.db.query("SELECT * FROM schedules WHERE id = ?", (sid,))
+        return dict(rows[0]) if rows else None
+
+    def due(self, at: str | None = None) -> list[dict]:
+        return [dict(r) for r in self.db.query(
+            "SELECT * FROM schedules WHERE enabled = 1 AND next_run <= ? ORDER BY next_run", (at or now(),))]
+
+    def set_enabled(self, sid: int, enabled: bool) -> None:
+        self.db.execute("UPDATE schedules SET enabled = ? WHERE id = ?", (int(enabled), sid))
+        self.audit.append(Event.SCOPE_CHANGE, detail={"schedule": "enabled" if enabled else "paused", "id": sid})
+
+    def remove(self, sid: int) -> None:
+        self.db.execute("DELETE FROM schedules WHERE id = ?", (sid,))
+        self.audit.append(Event.SCOPE_CHANGE, detail={"schedule": "removed", "id": sid})
+
+    def mark_run(self, sid: int, status: str, run_at: str, next_run: str) -> None:
+        self.db.execute("UPDATE schedules SET last_run = ?, next_run = ?, last_status = ? WHERE id = ?",
+                        (run_at, next_run, status, sid))
+
+    def run_now(self, sid: int) -> None:
+        self.db.execute("UPDATE schedules SET next_run = ? WHERE id = ?", (now(), sid))
+
+
 class ScanStore:
     def __init__(self, db: Database):
         self.db = db
 
-    def start(self, tool: str, target: str, command: str) -> int:
-        return self.db.execute("INSERT INTO scans(tool, target, command, started) VALUES (?, ?, ?, ?)",
-                               (tool, target, command, now())).lastrowid
+    def start(self, tool: str, target: str, command: str, schedule_id: int | None = None) -> int:
+        return self.db.execute(
+            "INSERT INTO scans(tool, target, command, started, schedule_id) VALUES (?, ?, ?, ?, ?)",
+            (tool, target, command, now(), schedule_id)).lastrowid
+
+    def for_target(self, target: str, limit: int = 100) -> list[dict]:
+        """Finished scans of exactly this target, newest first (with output)."""
+        return [dict(r) for r in self.db.query(
+            "SELECT * FROM scans WHERE target = ? AND finished IS NOT NULL AND raw_output IS NOT NULL "
+            "AND raw_output != '' ORDER BY id DESC LIMIT ?", (target, limit))]
+
+    def targets(self) -> list[dict]:
+        """Distinct scan targets with how many finished scans each has."""
+        return [dict(r) for r in self.db.query(
+            "SELECT target, COUNT(*) AS n, MAX(started) AS last FROM scans WHERE finished IS NOT NULL "
+            "AND raw_output IS NOT NULL AND raw_output != '' GROUP BY target ORDER BY last DESC")]
 
     def finish(self, scan_id: int, exit_code: int, raw_output: str | None) -> None:
         self.db.execute("UPDATE scans SET finished = ?, exit_code = ?, raw_output = ? WHERE id = ?",
