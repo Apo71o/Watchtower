@@ -1,5 +1,7 @@
 # Watchtower
 
+![tests](https://github.com/Apo71o/Watchtower/actions/workflows/tests.yml/badge.svg)
+
 A local, GUI-based network and Wi-Fi security **auditing and reporting** tool
 for your own home lab and CTF practice. It wraps well-known tools (nmap,
 airodump-ng, sslyze/testssl.sh, net-snmp) and turns their output into

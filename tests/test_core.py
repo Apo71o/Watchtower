@@ -216,3 +216,21 @@ def test_terminate_all_stops_running_children(db):
     assert runner.terminate_all() == 1
     t.join(10)
     assert not t.is_alive() and result["r"].exit_code != 0 and not runner._active
+
+
+def test_maintenance_prune(db):
+    from datetime import datetime, timedelta, timezone
+
+    from watchtower.storage.scope import Maintenance, ScanStore
+    scans = ScanStore(db)
+    old_id = scans.start("nmap", "10.0.0.1", "nmap 10.0.0.1")
+    new_id = scans.start("nmap", "10.0.0.2", "nmap 10.0.0.2")
+    old_ts = (datetime.now(timezone.utc) - timedelta(days=100)).isoformat(timespec="seconds")
+    db.execute("UPDATE scans SET started = ?, finished = ?, raw_output = '<x/>' WHERE id = ?",
+               (old_ts, old_ts, old_id))
+    db.execute("UPDATE scans SET raw_output = '<x/>' WHERE id = ?", (new_id,))
+    m = Maintenance(db)
+    assert m.prune(0) == {}                                  # 0 = keep everything
+    assert m.prune(90) == {"scans": 1}
+    assert [s["id"] for s in scans.recent()] == [new_id]     # recent scan kept
+    assert m.db_size_bytes() > 0

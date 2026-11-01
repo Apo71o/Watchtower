@@ -3,6 +3,6 @@ Type=Application
 Name=Watchtower
 Comment=Local network / Wi-Fi security audit (reporting only)
 Exec=@EXEC@
-Icon=network-wireless
+Icon=@ICON@
 Terminal=false
 Categories=Network;Security;

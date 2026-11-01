@@ -358,3 +358,14 @@ def test_nvd_lookup_logs_and_caches(ctx, monkeypatch):
     reqs = [e for e in ctx.audit.entries() if e.event == "network_request"]
     assert len(reqs) == 1 and "services.nvd.nist.gov" in reqs[0].command
     assert ctx.nvd.get("cpe:2.3:a:vsftpd:vsftpd:2.3.4")
+
+
+def test_settings_retention(ctx, tmp_path):
+    from watchtower.gui.tabs.settings_tab import SettingsTab
+    from watchtower.storage.settings import RETENTION_DAYS
+    sid = ctx.scans.start("nmap", "10.0.0.1", "nmap 10.0.0.1")
+    ctx.scans.finish(sid, 0, "<x/>")
+    tab = SettingsTab(ctx)
+    tab.retention.setValue(30)
+    assert ctx.settings.get(RETENTION_DAYS) == 30
+    assert "Database size" in tab.data_info.text()

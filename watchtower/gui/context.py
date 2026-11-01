@@ -11,7 +11,15 @@ from watchtower.core.platform_utils import PlatformInfo
 from watchtower.core.runner import CommandRunner
 from watchtower.storage.audit_log import AuditLog, Entry
 from watchtower.storage.db import Database
-from watchtower.storage.scope import HostAuditStore, NetworkStore, NvdCache, ScanStore, ScheduleStore, TargetStore
+from watchtower.storage.scope import (
+    HostAuditStore,
+    Maintenance,
+    NetworkStore,
+    NvdCache,
+    ScanStore,
+    ScheduleStore,
+    TargetStore,
+)
 from watchtower.storage.settings import Settings
 
 
@@ -44,6 +52,7 @@ class AppContext:
     audits: HostAuditStore
     schedules: ScheduleStore
     nvd: NvdCache
+    maintenance: Maintenance
 
     @classmethod
     def create(cls, db: Database, platform: PlatformInfo) -> AppContext:
@@ -55,7 +64,7 @@ class AppContext:
         runner.on_command(lambda cmd, purpose: bus.command_started.emit(cmd, purpose))
         return cls(db, settings, audit, runner, DependencyState(), platform, bus,
                    NetworkStore(db, audit), TargetStore(db, audit), ScanStore(db), HostAuditStore(db),
-                   ScheduleStore(db, audit), NvdCache(db))
+                   ScheduleStore(db, audit), NvdCache(db), Maintenance(db))
 
     def nvd_enabled(self) -> bool:
         from watchtower.storage.settings import NVD_ENABLED

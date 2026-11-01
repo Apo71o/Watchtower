@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg width="256" height="256" viewBox="0 0 256 256" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="g" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#2a6fb0"/>
+      <stop offset="1" stop-color="#1b3a5c"/>
+    </linearGradient>
+  </defs>
+  <!-- shield -->
+  <path d="M128 20 L212 52 V128 C212 184 176 222 128 238 C80 222 44 184 44 128 V52 Z"
+        fill="url(#g)" stroke="#12283f" stroke-width="6"/>
+  <!-- watchtower eye / radar sweep -->
+  <circle cx="128" cy="128" r="18" fill="#e8f1fa"/>
+  <g fill="none" stroke="#e8f1fa" stroke-width="10" stroke-linecap="round" opacity="0.92">
+    <path d="M128 92 A36 36 0 0 1 164 128"/>
+    <path d="M128 66 A62 62 0 0 1 190 128"/>
+    <path d="M128 40 A88 88 0 0 1 216 128" opacity="0.6"/>
+  </g>
+  <g fill="none" stroke="#e8f1fa" stroke-width="10" stroke-linecap="round" opacity="0.92">
+    <path d="M128 164 A36 36 0 0 1 92 128"/>
+    <path d="M128 190 A62 62 0 0 1 66 128"/>
+  </g>
+</svg>

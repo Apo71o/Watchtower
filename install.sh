@@ -57,7 +57,11 @@ fi
 
 # 4. Desktop launcher
 mkdir -p "$DESKTOP_DIR"
-sed "s|@EXEC@|$LAUNCH|" "$SRC/packaging/watchtower.desktop.in" > "$DESKTOP_DIR/watchtower.desktop"
+ICON_DIR="${XDG_DATA_HOME:-$HOME/.local/share}/icons"
+mkdir -p "$ICON_DIR"
+cp "$SRC/watchtower/data/watchtower.svg" "$ICON_DIR/watchtower.svg"
+sed -e "s|@EXEC@|$LAUNCH|" -e "s|@ICON@|$ICON_DIR/watchtower.svg|" \
+    "$SRC/packaging/watchtower.desktop.in" > "$DESKTOP_DIR/watchtower.desktop"
 command -v update-desktop-database >/dev/null && update-desktop-database "$DESKTOP_DIR" 2>/dev/null || true
 
 say "Installed. Launch from your app menu, or run: watchtower"

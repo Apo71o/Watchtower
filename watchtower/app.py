@@ -55,6 +55,14 @@ def main(argv: list[str] | None = None) -> int:
     apply_theme(ctx.settings.get(THEME, "system"))
     ctx.audit.append(Event.APP_START, detail={"version": __version__, "platform": info.summary()})
 
+    from importlib import resources
+
+    from PySide6.QtGui import QIcon
+    try:
+        app.setWindowIcon(QIcon(str(resources.files("watchtower.data") / "watchtower.svg")))
+    except Exception:
+        pass
+
     win = MainWindow(ctx)
     win.show()
 

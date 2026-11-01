@@ -5,7 +5,7 @@ from __future__ import annotations
 
 import json
 from dataclasses import fields
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 from watchtower.core.targets import in_scope, parse_target
 from watchtower.storage.audit_log import AuditLog, Event
@@ -200,6 +200,39 @@ class ScheduleStore:
 
     def run_now(self, sid: int) -> None:
         self.db.execute("UPDATE schedules SET next_run = ? WHERE id = ?", (now(), sid))
+
+
+class Maintenance:
+    """Housekeeping: delete history older than a cutoff. Never touches audit_log
+    (append-only) or the authorized-targets / networks scope the user set up."""
+
+    def __init__(self, db: Database):
+        self.db = db
+
+    def prune(self, days: int) -> dict[str, int]:
+        if not days or days <= 0:
+            return {}
+        cutoff = (datetime.now(timezone.utc) - timedelta(days=days)).isoformat(timespec="seconds")
+        counts = {}
+        cur = self.db.execute("DELETE FROM scans WHERE started < ?", (cutoff,))
+        counts["scans"] = cur.rowcount
+        cur = self.db.execute("DELETE FROM wifi_snapshots WHERE ts < ?", (cutoff,))
+        counts["wifi snapshots"] = cur.rowcount
+        cur = self.db.execute("DELETE FROM host_audits WHERE started < ?", (cutoff,))
+        counts["host audits"] = cur.rowcount
+        self.db.execute("DELETE FROM wifi_observations WHERE snapshot_id NOT IN (SELECT id FROM wifi_snapshots)")
+        return {k: v for k, v in counts.items() if v}
+
+    def db_size_bytes(self) -> int:
+        try:
+            page_count = self.db.query("PRAGMA page_count")[0][0]
+            page_size = self.db.query("PRAGMA page_size")[0][0]
+            return page_count * page_size
+        except (IndexError, KeyError):
+            return 0
+
+    def vacuum(self) -> None:
+        self.db.execute("VACUUM")
 
 
 class NvdCache:

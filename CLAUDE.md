@@ -171,6 +171,14 @@ docs/SPEC.md             original build prompt (authoritative requirements)
         AppContext.nvd_lookup() logs every request as Event.NETWORK_REQUEST + Command Console;
         Findings "Look up CVEs on NVD" (+ automatic after scans) only when Settings toggle is on
 
+## Housekeeping done (2026-11-01, post step 11)
+
+- LICENSE (MIT), .github/workflows/tests.yml (ruff + pytest on 3.11/3.12/3.13).
+- Data retention: settings RETENTION_DAYS, storage.scope.Maintenance.prune()/vacuum()/db_size_bytes();
+  pruned on startup (app.py) and from Settings "Clean up now". Never prunes audit_log or scope.
+- App icon watchtower/data/watchtower.svg (shield + signal arcs), set as window icon and shipped by
+  install.sh to ~/.local/share/icons + referenced from the .desktop (Icon=@ICON@).
+
 ## Cloud vs local
 
 The project started in a Claude Code cloud session and continues on the user's

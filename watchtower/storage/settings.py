@@ -13,6 +13,7 @@ NVD_API_KEY = "nvd_api_key"
 NVD_ENABLED = "nvd_lookups_enabled"      # bool, default False (no network calls)
 THEME = "theme"                          # "system" | "light" | "dark"
 SCHED_BACKGROUND = "schedules_background_timer"  # bool: systemd user timer runs schedules
+RETENTION_DAYS = "retention_days"        # int: delete scans/snapshots/audits older than this (0 = keep all)
 
 
 class Settings:
