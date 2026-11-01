@@ -22,12 +22,34 @@ class _Job(QRunnable):
         try:
             result = self.fn(*self.args, **self.kwargs)
         except Exception as exc:  # surfaced to the user, not swallowed
-            self.signals.failed.emit(f"{exc}\n\n{traceback.format_exc(limit=3)}")
+            self._emit(self.signals.failed, f"{exc}\n\n{traceback.format_exc(limit=3)}")
         else:
-            self.signals.done.emit(result)
+            self._emit(self.signals.done, result)
+
+    @staticmethod
+    def _emit(signal, value):
+        if _closing:
+            return   # app is shutting down: don't touch Qt from this thread
+        try:
+            signal.emit(value)
+        except RuntimeError:
+            pass  # the window that asked for this was closed while it ran: nobody to tell
 
 
 _jobs: set = set()
+_closing = False
+
+
+def shutdown(timeout_ms: int = 4000) -> bool:
+    """Called on exit: drop queued jobs and wait briefly for running ones.
+    Returns True if every job finished."""
+    global _closing
+    _closing = True
+    pool = QThreadPool.globalInstance()
+    pool.clear()
+    done = pool.waitForDone(timeout_ms)
+    _closing = False   # tests keep running after a shutdown() call
+    return done
 
 
 def run_in_background(fn, *args, on_done=None, on_error=None, **kwargs) -> None:

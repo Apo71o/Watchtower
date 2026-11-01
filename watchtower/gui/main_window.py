@@ -14,6 +14,7 @@ from watchtower.gui.help_panel import TabPage
 from watchtower.gui.tabs.audit_log_tab import AuditLogTab
 from watchtower.gui.tabs.findings_tab import FindingsTab
 from watchtower.gui.tabs.help_tab import HelpTab
+from watchtower.gui.tabs.host_audit_tab import HostAuditTab
 from watchtower.gui.tabs.interfaces_tab import InterfacesTab
 from watchtower.gui.tabs.nearby_tab import NearbyTab
 from watchtower.gui.tabs.placeholder import PlaceholderTab
@@ -51,8 +52,8 @@ class MainWindow(QMainWindow):
         self.findings_tab = FindingsTab(ctx)
         add("findings", "Findings", self.findings_tab)
         self.pages["findings"].help.toggle.setChecked(False)   # the detail pane explains each finding
-        add("host_audit", "Host Audit",
-            PlaceholderTab(ctx, "Host Audit", "step 6", ["sslyze", "snmp"], "Audit host"))
+        self.host_audit_tab = HostAuditTab(ctx)
+        add("host_audit", "Host Audit", self.host_audit_tab)
         add("changes", "What Changed",
             PlaceholderTab(ctx, "What Changed", "step 8", ["nmap"], "Compare scans"))
         self.audit_tab = AuditLogTab(ctx)

@@ -107,6 +107,31 @@ class TargetStore:
         return in_scope(target, self.values())
 
 
+class HostAuditStore:
+    def __init__(self, db: Database):
+        self.db = db
+
+    def start(self, kind: str, host: str, port: int | None, tool: str, command: str) -> int:
+        return self.db.execute(
+            "INSERT INTO host_audits(kind, host, port, tool, command, started) VALUES (?, ?, ?, ?, ?, ?)",
+            (kind, host, port, tool, command, now())).lastrowid
+
+    def finish(self, audit_id: int, exit_code: int, raw_output: str, result_json: str) -> None:
+        self.db.execute("UPDATE host_audits SET finished = ?, exit_code = ?, raw_output = ?, result_json = ? "
+                        "WHERE id = ?", (now(), exit_code, raw_output, result_json, audit_id))
+
+    def latest(self, host: str | None = None) -> list[dict]:
+        """Newest finished audit per (host, kind, port)."""
+        sql = ("SELECT * FROM host_audits a WHERE finished IS NOT NULL AND id = (SELECT MAX(id) FROM host_audits b "
+               "WHERE b.host = a.host AND b.kind = a.kind AND IFNULL(b.port, -1) = IFNULL(a.port, -1) "
+               "AND b.finished IS NOT NULL)")
+        params: tuple = ()
+        if host:
+            sql += " AND host = ?"
+            params = (host,)
+        return [dict(r) for r in self.db.query(sql + " ORDER BY host, kind, port", params)]
+
+
 class ScanStore:
     def __init__(self, db: Database):
         self.db = db

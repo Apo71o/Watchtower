@@ -35,7 +35,7 @@ sudo apt install nmap iw aircrack-ng network-manager snmp testssl.sh
 | airodump-ng | `aircrack-ng` | Passive, listen-only AP/client listing (the only tool from that package Watchtower runs) |
 | nmcli | `network-manager` | Nearby-network scan without a password (usually preinstalled) |
 | iwlist | `wireless-tools` | Obsolete and not needed (`iw` replaces it); missing from newer Ubuntu/Debian, and the installer skips it there |
-| sslyze *or* testssl.sh | `pip install sslyze` into the venv / `testssl.sh` | TLS audit (optional) |
+| sslyze *or* testssl.sh | `testssl.sh` (apt) / sslyze: the installer button runs `pip install sslyze` inside Watchtower's environment | TLS audit in Host Audit (optional; either one is enough) |
 | snmpget/snmpwalk | `snmp` | Read-only SNMP community-string check (optional) |
 | Metasploit | [Rapid7 installer](https://docs.metasploit.com/docs/using-metasploit/getting-started/nightly-installers.html) | Module-name cross-reference only (optional) |
 | weasyprint | `weasyprint` | PDF report export (optional) |

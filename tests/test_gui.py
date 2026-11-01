@@ -25,7 +25,16 @@ def qapp():
 @pytest.fixture
 def ctx(db, qapp):
     from watchtower.gui.context import AppContext
-    return AppContext.create(db, platform_info())
+    from watchtower.gui.worker import shutdown
+    yield AppContext.create(db, platform_info())
+    # Like the real app on exit: finish background jobs, then destroy the widgets this test made
+    # (left alive, they'd be torn down after QApplication and crash the interpreter on exit).
+    shutdown()
+    for w in QApplication.topLevelWidgets():
+        w.close()
+        w.deleteLater()
+    QApplication.sendPostedEvents(None, 0)
+    QApplication.processEvents()
 
 
 def wait_for(cond, timeout=60.0):
@@ -186,3 +195,84 @@ def test_findings_details_patch_section(ctx):
     for needle in ("Is it fixed on this system?", "3ubuntu0.10", "USN-6859-1", "CVE details", "CWE-364",
                    "apt changelog openssh-server", "Open ports", "Host: 192.168.56.101"):
         assert needle in text, needle
+
+
+def _free_port():
+    with socket.socket() as s:
+        s.bind(("127.0.0.1", 0))
+        return s.getsockname()[1]
+
+
+@pytest.mark.skipif(not (shutil.which("openssl") and shutil.which("testssl")), reason="openssl/testssl.sh missing")
+def test_host_audit_tls_end_to_end(ctx, tmp_path):
+    from watchtower.core import deps
+    from watchtower.gui.tabs.host_audit_tab import HostAuditTab
+    ctx.deps.update(deps.check_all())
+    subprocess.run(["openssl", "req", "-x509", "-newkey", "rsa:2048", "-nodes", "-keyout", str(tmp_path / "k.pem"),
+                    "-out", str(tmp_path / "c.pem"), "-days", "5", "-subj", "/CN=test.lan"], check=True,
+                   capture_output=True)
+    port = _free_port()
+    srv = subprocess.Popen(["openssl", "s_server", "-accept", f"127.0.0.1:{port}", "-cert", str(tmp_path / "c.pem"),
+                            "-key", str(tmp_path / "k.pem"), "-www"], stdout=subprocess.DEVNULL,
+                           stderr=subprocess.DEVNULL, stdin=subprocess.DEVNULL)
+    try:
+        time.sleep(0.8)
+        ctx.targets.add("127.0.0.1")
+        tab = HostAuditTab(ctx)
+        tab.host_input.setText("127.0.0.1")
+        tab._add_host()
+        tab.tls_port.setEditText(str(port))
+        tab.tls_port.setCurrentIndex(-1)
+        tab.tls_port.setEditText(str(port))
+        tab.tls_backend.setCurrentText("testssl.sh")
+        assert tab.tls_btn.isEnabled()
+        tab.run_tls()
+        assert wait_for(lambda: tab.cancel_event is None, 400)
+        text = tab.results.toPlainText()
+        assert f"Port {port}" in text and "Certificate" in text, text
+        row = ctx.audits.latest("127.0.0.1")[0]
+        assert row["kind"] == "tls" and row["tool"] == "testssl.sh" and row["raw_output"]
+    finally:
+        srv.terminate()
+
+
+@pytest.mark.skipif(not (shutil.which("snmpd") and shutil.which("snmpget")), reason="snmpd/snmpget missing")
+def test_host_audit_snmp_end_to_end(ctx, tmp_path):
+    from watchtower.gui.tabs.host_audit_tab import HostAuditTab
+    port = _free_port()
+    conf = tmp_path / "snmpd.conf"
+    conf.write_text(f"agentaddress udp:127.0.0.1:{port}\nrocommunity public 127.0.0.1\nsysName e2e-box\n")
+    srv = subprocess.Popen(["snmpd", "-f", "-Lo", "-C", "-c", str(conf)], stdout=subprocess.DEVNULL,
+                           stderr=subprocess.DEVNULL)
+    try:
+        time.sleep(1.0)
+        ctx.targets.add("127.0.0.1")
+        tab = HostAuditTab(ctx)
+        tab.host_input.setText("127.0.0.1")
+        tab._add_host()
+        tab.snmp_port.setValue(port)
+        tab.v1.setChecked(False)
+        tab.run_snmp()
+        assert wait_for(lambda: tab.cancel_event is None, 60)
+        text = tab.results.toPlainText()
+        assert "e2e-box" in text and "private" in text
+        assert any("snmpget" in (e.command or "") and "-c public" in (e.command or "") for e in ctx.audit.entries())
+        assert not any(" set" in (e.command or "").lower() for e in ctx.audit.entries())
+    finally:
+        srv.terminate()
+
+
+def test_host_audit_refuses_out_of_scope(ctx, monkeypatch):
+    from watchtower.gui.tabs import host_audit_tab
+    shown = []
+
+    class FakeBox:   # don't monkeypatch attributes on PySide types themselves: it crashes at exit
+        @staticmethod
+        def warning(*a, **k):
+            shown.append(a[2])
+
+    monkeypatch.setattr(host_audit_tab, "QMessageBox", FakeBox)
+    tab = host_audit_tab.HostAuditTab(ctx)
+    tab.host_input.setText("10.9.9.9")
+    tab._add_host()
+    assert shown and "authorized" in shown[0] and tab.host_list.count() == 0

@@ -88,6 +88,23 @@ MIGRATIONS: list[str] = [
     );
     CREATE INDEX scans_target ON scans(target, started);
     """,
+    # 3: Host Audit results (TLS, SNMP)
+    """
+    CREATE TABLE host_audits (
+        id          INTEGER PRIMARY KEY AUTOINCREMENT,
+        kind        TEXT NOT NULL,             -- "tls" | "snmp"
+        host        TEXT NOT NULL,
+        port        INTEGER,
+        tool        TEXT,                      -- testssl.sh / sslyze / snmpget
+        command     TEXT,
+        started     TEXT NOT NULL,
+        finished    TEXT,
+        exit_code   INTEGER,
+        raw_output  TEXT,                      -- tool JSON / text
+        result_json TEXT                       -- normalized issues / attempts
+    );
+    CREATE INDEX host_audits_host ON host_audits(host, kind, port, id);
+    """,
 ]
 
 

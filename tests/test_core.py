@@ -199,3 +199,20 @@ def test_check_all_marks_unavailable(db, monkeypatch):
     statuses = {s.tool.key: s for s in deps.check_all(CommandRunner(AuditLog(db)))}
     assert statuses["iwlist"].installable is False and "not available" in statuses["iwlist"].install_hint
     assert statuses["nmap"].installable is True
+
+
+def test_terminate_all_stops_running_children(db):
+    import threading
+    import time
+    runner = CommandRunner(AuditLog(db))
+    result = {}
+    t = threading.Thread(target=lambda: result.setdefault(
+        "r", runner.run([sys.executable, "-c", "import time; time.sleep(60)"], purpose="t")))
+    t.start()
+    for _ in range(100):
+        if runner._active:
+            break
+        time.sleep(0.05)
+    assert runner.terminate_all() == 1
+    t.join(10)
+    assert not t.is_alive() and result["r"].exit_code != 0 and not runner._active

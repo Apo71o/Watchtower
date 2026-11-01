@@ -140,11 +140,12 @@ class FindingsTab(QWidget):
         self.table.itemSelectionChanged.connect(self._finding_selected)
         ctx.bus.scan_finished.connect(self.refresh)
         ctx.bus.networks_changed.connect(self.refresh)
+        ctx.bus.audit_finished.connect(self.refresh)
         self.refresh()
 
     def refresh(self):
         self.assessment = assess(self.ctx.scans.with_output(), self.ctx.networks.all(),
-                                 self.include_unauth.isChecked())
+                                 self.include_unauth.isChecked(), self.ctx.audits.latest())
         a = self.assessment
         c = a.counts()
         parts = [f"<span style='color:{SEV_COLORS[s]}'><b>{c[s]}</b> {s}</span>" for s in SEVERITIES if c[s]]

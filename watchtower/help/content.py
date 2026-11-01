@@ -104,15 +104,26 @@ extend the CVE coverage.
 """,
 "host_audit": """
 ### Host Audit
-**What it does:** deeper, read-only checks on one authorized host:
-- **TLS audit** (`sslyze` or `testssl.sh`): protocol versions, weak ciphers,
-  expired or self-signed certificates.
-- **SNMP audit** (`snmpget`, GET only): does a common community string such as
-  `public` grant read access?
-- **Default-credentials fingerprint:** does the device's banner match a model
-  known to ship with a default password? Reported only; no login is attempted.
+**What it does:** deeper checks on one host from your authorized targets. Hosts
+you've scanned appear on the left; you can add another in-scope host by hand.
 
-*Status: implemented in build step 6.*
+- **Default credentials** (automatic, nothing sent): matches what nmap learned
+  (banners, page titles, hostnames, MAC vendor) against device types known to
+  ship with a published default login, such as Raspberry Pi OS pi/raspberry,
+  Ubiquiti ubnt/ubnt or Dell iDRAC root/calvin. It shows what matched and why.
+  It never tries to log in.
+- **TLS audit** (`testssl.sh` or `sslyze`): pick a port; Watchtower suggests the
+  ones nmap saw speaking TLS. It checks protocol versions (SSLv2/3, TLS 1.0/1.1),
+  weak cipher suites (NULL, anonymous, export, RC4, 3DES), the certificate
+  (trust, expiry, host name, key size) and known TLS bugs (Heartbleed, ROBOT,
+  CCS injection, ...). testssl.sh is more thorough; SSLyze is faster.
+- **SNMP check** (`snmpget`, GET requests only): asks for a few system values
+  (description, name, contact, location, uptime) using each community string
+  you list (by default the factory `public` and `private`). An answer means that
+  string grants read access. Watchtower never sends SET (write) requests.
+
+Results also appear in **Findings** with remediation and count toward the
+host's risk score. Every command is shown in the Command Console and audit log.
 """,
 "changes": """
 ### What Changed
@@ -242,6 +253,10 @@ GLOSSARY: list[tuple[str, str]] = [
  "patches, bumping only the package revision: OpenSSH 8.9p1 on Ubuntu 22.04 went from 3ubuntu0.1 to 3ubuntu0.10 "
  "and beyond. A scanner that only looks at '8.9p1' would call it vulnerable forever. The advisories (USN for "
  "Ubuntu, DSA for Debian) list the first fixed revision, which is what Watchtower compares against."),
+("Self-signed certificate",
+ "A TLS certificate signed by its own key instead of a trusted certificate authority. The connection is still "
+ "encrypted, but the client can't verify who it's talking to, so an impostor's certificate looks the same. "
+ "Common on routers, NAS boxes and lab VMs. Fix with Let's Encrypt or your own internal CA."),
 ("Probable vs confirmed",
  "A **probable** finding is a version match: nmap reported a version known to be vulnerable. Linux distributions "
  "often backport security fixes without changing the version number (Ubuntu's OpenSSH 8.9p1 can be fully "

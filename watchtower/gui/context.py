@@ -11,7 +11,7 @@ from watchtower.core.platform_utils import PlatformInfo
 from watchtower.core.runner import CommandRunner
 from watchtower.storage.audit_log import AuditLog, Entry
 from watchtower.storage.db import Database
-from watchtower.storage.scope import NetworkStore, ScanStore, TargetStore
+from watchtower.storage.scope import HostAuditStore, NetworkStore, ScanStore, TargetStore
 from watchtower.storage.settings import Settings
 
 
@@ -25,6 +25,7 @@ class Bus(QObject):
     request_scan = Signal(str)               # open Scan a Target with this target filled in
     scan_finished = Signal()                 # new nmap results stored
     networks_changed = Signal()              # Wi-Fi observations or Authorized flags changed
+    audit_finished = Signal()                # new Host Audit (TLS/SNMP) results stored
     dependencies_changed = Signal()
 
 
@@ -40,6 +41,7 @@ class AppContext:
     networks: NetworkStore
     targets: TargetStore
     scans: ScanStore
+    audits: HostAuditStore
 
     @classmethod
     def create(cls, db: Database, platform: PlatformInfo) -> AppContext:
@@ -50,7 +52,7 @@ class AppContext:
         audit.subscribe(lambda e: bus.audit_appended.emit(e))
         runner.on_command(lambda cmd, purpose: bus.command_started.emit(cmd, purpose))
         return cls(db, settings, audit, runner, DependencyState(), platform, bus,
-                   NetworkStore(db, audit), TargetStore(db, audit), ScanStore(db))
+                   NetworkStore(db, audit), TargetStore(db, audit), ScanStore(db), HostAuditStore(db))
 
 
 __all__ = ["AppContext", "Bus", "Entry"]

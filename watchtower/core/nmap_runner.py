@@ -254,6 +254,8 @@ class Port:
     version: str = ""
     extrainfo: str = ""
     tunnel: str = ""
+    devicetype: str = ""
+    ostype: str = ""
     cpes: list[str] = field(default_factory=list)
     scripts: list[Script] = field(default_factory=list)
 
@@ -334,6 +336,7 @@ def parse_xml(text: str) -> ScanResult:
                 port.service = svc.get("name", "")
                 port.product, port.version = svc.get("product", ""), svc.get("version", "")
                 port.extrainfo, port.tunnel = svc.get("extrainfo", ""), svc.get("tunnel", "")
+                port.devicetype, port.ostype = svc.get("devicetype", ""), svc.get("ostype", "")
                 port.cpes = [c.text or "" for c in svc.findall("cpe")]
             host.ports.append(port)
         hs = h.find("hostscript")

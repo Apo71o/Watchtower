@@ -102,14 +102,16 @@ def _extra_dirs() -> list[Path]:
     airodump-ng and setcap install. On Windows, a fresh Nmap install isn't on
     the PATH of an already-running app until it restarts."""
     if is_windows():
-        dirs = []
+        dirs = [Path(sys.executable).parent]
         for var in ("ProgramFiles(x86)", "ProgramFiles"):
             if os.environ.get(var):
                 dirs.append(Path(os.environ[var]) / "Nmap")
         if os.environ.get("LOCALAPPDATA"):
             dirs.append(Path(os.environ["LOCALAPPDATA"]) / "Microsoft" / "WinGet" / "Links")
         return dirs
-    return [Path(d) for d in ("/usr/local/sbin", "/usr/sbin", "/sbin", "/usr/local/bin", "/snap/bin")]
+    # Watchtower's own venv (pip-installed tools like sslyze) is often not on PATH either.
+    return [Path(sys.executable).parent] + [Path(d) for d in ("/usr/local/sbin", "/usr/sbin", "/sbin",
+                                                              "/usr/local/bin", "/snap/bin")]
 
 
 def find_binary(*names: str) -> str | None:

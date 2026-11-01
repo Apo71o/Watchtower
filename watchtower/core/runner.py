@@ -56,6 +56,28 @@ class CommandRunner:
     def __init__(self, audit: AuditLog):
         self.audit = audit
         self._display_hooks: list = []
+        self._active: set[subprocess.Popen] = set()
+        self._lock = threading.Lock()
+
+    def _track(self, proc: subprocess.Popen) -> None:
+        with self._lock:
+            self._active.add(proc)
+
+    def _untrack(self, proc: subprocess.Popen) -> None:
+        with self._lock:
+            self._active.discard(proc)
+
+    def terminate_all(self) -> int:
+        """Stop every child process still running (called when the app closes).
+        Processes running as root via pkexec can't be signalled and are left alone."""
+        with self._lock:
+            procs = list(self._active)
+        for p in procs:
+            try:
+                p.terminate()
+            except OSError:
+                pass
+        return len(procs)
 
     def on_command(self, callback) -> None:
         """callback(command_str, purpose) is called just before each run so the
@@ -79,24 +101,29 @@ class CommandRunner:
         start_id = self.audit.append(Event.COMMAND_START, command=command, target=target,
                                      detail={"purpose": purpose})
         try:
-            proc = subprocess.run(
-                argv, capture_output=True, text=True, timeout=timeout, errors="replace",
-                input=input_text, stdin=None if input_text is not None else subprocess.DEVNULL,
-                **_popen_flags(),
+            proc = subprocess.Popen(
+                argv, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, errors="replace",
+                stdin=subprocess.PIPE if input_text is not None else subprocess.DEVNULL, **_popen_flags(),
             )
-        except subprocess.TimeoutExpired as exc:
-            self.audit.append(Event.COMMAND_END, command=command, target=target,
-                              detail={"purpose": purpose, "error": f"timed out after {timeout}s"},
-                              exit_code=-1, ref_id=start_id)
-            return CommandResult(argv, command, -1, _decode(exc.stdout), _decode(exc.stderr), start_id)
         except OSError as exc:
             self.audit.append(Event.COMMAND_ERROR, command=command, target=target,
                               detail={"purpose": purpose, "error": str(exc)}, ref_id=start_id)
             raise CommandUnavailable(f"Could not run '{argv[0]}': {exc}") from exc
-
+        self._track(proc)
+        try:
+            out, err = proc.communicate(input=input_text, timeout=timeout)
+        except subprocess.TimeoutExpired:
+            proc.kill()
+            out, err = proc.communicate()
+            self.audit.append(Event.COMMAND_END, command=command, target=target,
+                              detail={"purpose": purpose, "error": f"timed out after {timeout}s"},
+                              exit_code=-1, ref_id=start_id)
+            return CommandResult(argv, command, -1, out or "", err or "", start_id)
+        finally:
+            self._untrack(proc)
         self.audit.append(Event.COMMAND_END, command=command, target=target,
                           detail={"purpose": purpose}, exit_code=proc.returncode, ref_id=start_id)
-        return CommandResult(argv, command, proc.returncode, proc.stdout, proc.stderr, start_id)
+        return CommandResult(argv, command, proc.returncode, out or "", err or "", start_id)
 
 
     def _announce(self, command: str, purpose: str) -> None:
@@ -142,6 +169,7 @@ class CommandRunner:
                               detail={"purpose": purpose, "error": str(exc)}, ref_id=start_id)
             raise CommandUnavailable(f"Could not run '{argv[0]}': {exc}") from exc
 
+        self._track(proc)
         cancelled = False
         if cancel is not None:
             def _watch():
@@ -163,6 +191,7 @@ class CommandRunner:
             if on_line:
                 on_line(line.rstrip("\n"))
         code = proc.wait()
+        self._untrack(proc)
         detail = {"purpose": purpose}
         if cancelled:
             detail["cancelled"] = True
@@ -187,11 +216,3 @@ def _popen_flags() -> dict:
     if is_windows():
         return {"creationflags": getattr(subprocess, "CREATE_NO_WINDOW", 0)}
     return {}
-
-
-def _decode(data) -> str:
-    if data is None:
-        return ""
-    if isinstance(data, bytes):
-        return data.decode(errors="replace")
-    return data

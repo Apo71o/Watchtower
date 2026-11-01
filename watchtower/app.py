@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import os
 import sys
 
 from watchtower import APP_NAME, __version__
@@ -40,7 +41,7 @@ def main(argv: list[str] | None = None) -> int:
     from watchtower.gui.context import AppContext
     from watchtower.gui.main_window import MainWindow
     from watchtower.gui.theme import apply_theme
-    from watchtower.gui.worker import run_in_background
+    from watchtower.gui.worker import run_in_background, shutdown
     from watchtower.storage.settings import THEME
 
     app = QApplication(sys.argv[:1])
@@ -59,7 +60,22 @@ def main(argv: list[str] | None = None) -> int:
 
     run_in_background(deps.check_all, ctx.runner, on_done=_deps_done)
     QTimer.singleShot(0, win.first_run)
-    return app.exec()
+    code = app.exec()
+    # Tear down in a fixed order: child processes, background jobs, the window, then Qt.
+    ctx.runner.terminate_all()
+    all_done = shutdown()
+    win.deleteLater()
+    app.processEvents()
+    del win
+    db.close()
+    if not all_done:
+        # A job is stuck (e.g. a root process we can't signal). Python's normal teardown would race
+        # that thread against Qt's destruction and can segfault; everything is already saved
+        # (SQLite autocommit), so leave immediately instead.
+        sys.stdout.flush()
+        sys.stderr.flush()
+        os._exit(code)
+    return code
 
 
 if __name__ == "__main__":

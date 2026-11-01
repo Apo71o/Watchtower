@@ -107,6 +107,14 @@ docs/SPEC.md             original build prompt (authoritative requirements)
 - Findings tab details = finding_markdown() (+ "Is it fixed on this system?", CVE details) +
   device_markdown() (network/host data, open ports, risk-score breakdown, other findings). Selecting
   a device in Top Risks shows device_markdown even when it has no findings.
+- Shutdown order matters (app.py): runner.terminate_all() -> worker.shutdown() (sets a closing flag
+  so finished jobs don't emit into dead Qt objects) -> delete window -> close DB; os._exit only if a
+  job is stuck. GUI tests' ctx fixture mirrors this and deletes top-level widgets; widgets left
+  alive past QApplication segfault the interpreter at exit. Don't monkeypatch attributes on PySide
+  classes in tests; patch the name in the module under test instead.
+- TLS/SNMP fixtures in tests/fixtures are real tool output (testssl.sh 3.2rc3, SSLyze 6, net-snmp)
+  captured against local test servers; tests/test_gui.py also runs both audits end-to-end against
+  openssl s_server / snmpd when those binaries exist.
 - Monitor-mode and airodump-ng paths are unit-tested against fixtures only; the cloud container
   has no Wi-Fi hardware. Verify on real hardware locally.
 
@@ -125,7 +133,9 @@ docs/SPEC.md             original build prompt (authoritative requirements)
         (shared by the Findings tab and the future report), Findings tab with Top Risks + details
 - [x] 5. Wi-Fi advisor (core/wep_wpa_advisor.py): open/OWE/WEP/WPA1-TKIP/WPA2-PSK/transition/
         Enterprise/WPS/default SSID/hidden SSID, each with technique explanation + remediation
-- [ ] 6. Host Audit tab: default-creds fingerprint (report only), TLS audit, SNMP read-only
+- [x] 6. Host Audit tab: core/default_creds.py + data/default_creds.json (fingerprint match only),
+        core/tls_audit.py (testssl.sh --jsonfile / sslyze --json_out -> TlsIssue), core/snmp_audit.py
+        (snmpget GET of system-group OIDs), host_audits table (migration 3), results feed assess()
 - [ ] 7. Metasploit module cross-reference (module names only)
 - [ ] 8. History diff ("What Changed") + scheduler
 - [ ] 9. Report export (HTML, optional PDF via weasyprint). Audit log viewer is already done.

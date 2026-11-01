@@ -17,7 +17,7 @@ CVE lookups, off by default.
 
 ## Status
 
-Build steps 1-5 of 11 are done:
+Build steps 1-6 of 11 are done:
 
 - Dependency check with a working one-click installer (live output, password prompt or terminal)
 - **Interfaces:** wireless adapters, monitor-mode support, switch monitor/managed mode
@@ -29,9 +29,11 @@ Build steps 1-5 of 11 are done:
 - **Findings:** CVE version matches, risky-service rules, nmap vuln-script results and Wi-Fi
   advisor findings, each with remediation, MITRE ATT&CK tags and a plain explanation; per-device
   0-100 risk score in a Top Risks view
+- **Host Audit:** TLS audit (testssl.sh or SSLyze), read-only SNMP community check, and
+  default-credential fingerprinting (report only, never tries a login)
 - Audit log viewer/export, command console, help panels, glossary
 
-Host Audit and What Changed are still placeholders (steps 6-8).
+What Changed (history diff + scheduler) is next (step 8), then reports and NVD lookups.
 
 ## Continuing development on your own machine
 
