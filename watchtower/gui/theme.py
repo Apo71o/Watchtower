@@ -33,3 +33,19 @@ def apply_theme(name: str) -> None:
         app.setPalette(app.style().standardPalette())
     else:
         app.setPalette(_default_palette)
+
+
+_base_point_size: float | None = None
+
+
+def apply_font_size(delta: int) -> None:
+    """Grow/shrink every font by `delta` points relative to the system default."""
+    global _base_point_size
+    app = QApplication.instance()
+    if app is None:
+        return
+    font = app.font()
+    if _base_point_size is None:
+        _base_point_size = font.pointSizeF() if font.pointSizeF() > 0 else 10.0
+    font.setPointSizeF(max(6.0, _base_point_size + delta))
+    app.setFont(font)

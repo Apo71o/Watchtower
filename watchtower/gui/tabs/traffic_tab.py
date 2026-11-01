@@ -47,8 +47,9 @@ from watchtower.core import traffic_hosts as th
 from watchtower.core.findings_engine import SEV_RANK, latest_hosts
 from watchtower.core.runner import format_command
 from watchtower.gui.context import AppContext
-from watchtower.gui.ui import restore_tip, tip
+from watchtower.gui.ui import follow, restore_tip, set_combo, tip
 from watchtower.gui.worker import run_in_background
+from watchtower.storage import preferences as prefs
 
 SEV_ICON = {"Critical": "🔴", "High": "🔴", "Medium": "🟠", "Low": "🟡", "Info": "🔵"}
 
@@ -107,7 +108,7 @@ class TrafficTab(QWidget):
         self.refresh_ifaces_btn.setFixedWidth(32)
         self.duration = QComboBox()
         self.duration.addItems(list(ta.DURATIONS))
-        self.duration.setCurrentText("1 minute")
+        follow(ctx, prefs.TRAFFIC_DURATION, lambda v: set_combo(self.duration, v))
         self.duration.setToolTip("How long to listen. Longer captures catch more (devices that only log in now and "
                                  "then); 1-5 minutes is a good start.")
         self.max_packets = QSpinBox(minimum=0, maximum=10_000_000, value=0, singleStep=1000)
@@ -154,7 +155,7 @@ class TrafficTab(QWidget):
         rep = QGroupBox("2. Repeat automatically (optional)")
         self.every = QComboBox()
         self.every.addItems(list(scheduler.INTERVALS))
-        self.every.setCurrentText("Daily")
+        follow(ctx, prefs.SCHEDULE_INTERVAL, lambda v: set_combo(self.every, v))
         self.every.setToolTip("How often to repeat the capture.")
         self.add_sched_btn = QPushButton("Repeat this capture")
         self.add_sched_btn.setToolTip("Save the interface, length and filter from step 1 as a repeating capture. "
@@ -299,6 +300,8 @@ class TrafficTab(QWidget):
         self._timer.timeout.connect(self._tick)
 
         self.load_interfaces()
+        follow(ctx, prefs.TRAFFIC_INTERFACE, self._prefer_interface)
+        follow(ctx, prefs.TRAFFIC_DISCOVER, lambda v: self.discover.setChecked(v and self.discover.isEnabled()))
         self.reload()
 
     def showEvent(self, event):
@@ -331,6 +334,11 @@ class TrafficTab(QWidget):
         except Exception:  # noqa: BLE001 - not Linux / no `ip`: no network info, discovery stays off
             pass
         self._gate()
+
+    def _prefer_interface(self, name: str):
+        idx = self.iface.findData(name) if name else -1
+        if idx >= 0:
+            self.iface.setCurrentIndex(idx)
 
     def iface_nets(self, iface: str | None) -> list[str]:
         return [n for n in self._nets.get(iface or "", []) if not n.startswith(("127.", "fe80:", "::1"))]

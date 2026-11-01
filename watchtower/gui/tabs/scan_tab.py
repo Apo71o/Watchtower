@@ -35,8 +35,9 @@ from watchtower.core import nmap_runner as nr
 from watchtower.core.platform_utils import is_linux, is_windows, relaunch_as_admin
 from watchtower.core.runner import format_command
 from watchtower.gui.context import AppContext
-from watchtower.gui.ui import restore_tip, tip
+from watchtower.gui.ui import follow, restore_tip, set_combo, tip
 from watchtower.gui.worker import run_in_background
+from watchtower.storage import preferences as prefs
 
 STATE_COLORS = {"open": "#2e7d32", "filtered": "#9e6a00", "closed": "#757575"}
 
@@ -199,6 +200,8 @@ class ScanTab(QWidget):
         ctx.bus.targets_changed.connect(self._load_targets)
         ctx.bus.dependencies_changed.connect(self._update_preview)
         ctx.bus.request_scan.connect(self.target.setText)
+        follow(ctx, prefs.SCAN_PROFILE, lambda v: set_combo(self.profile, v))
+        follow(ctx, prefs.SCAN_OS_DETECT, self.os_detect.setChecked)
         self._load_targets()
         self._load_history_list()
         self._update_preview()

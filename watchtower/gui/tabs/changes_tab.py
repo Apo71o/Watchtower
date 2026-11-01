@@ -23,8 +23,9 @@ from PySide6.QtWidgets import (
 from watchtower.core import history_diff, nmap_runner, scheduler, traffic_audit
 from watchtower.core.platform_utils import data_dir
 from watchtower.gui.context import AppContext
-from watchtower.gui.ui import tip
+from watchtower.gui.ui import follow, set_combo, tip
 from watchtower.gui.worker import run_in_background
+from watchtower.storage import preferences as prefs
 from watchtower.storage.audit_log import Event
 from watchtower.storage.settings import SCHED_BACKGROUND
 
@@ -101,7 +102,7 @@ class ChangesTab(QWidget):
         self.s_interval = QComboBox()
         tip(self.s_interval, 'How often to repeat the scan.')
         self.s_interval.addItems(list(scheduler.INTERVALS))
-        self.s_interval.setCurrentText("Daily")
+        follow(ctx, prefs.SCHEDULE_INTERVAL, lambda v: set_combo(self.s_interval, v))
         add_btn = QPushButton("Add schedule")
         tip(add_btn, ("Repeat this scan automatically; each run is compared with the previous one and alerts are "
                       "shown here."))

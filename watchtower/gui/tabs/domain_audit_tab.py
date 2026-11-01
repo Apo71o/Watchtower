@@ -33,8 +33,9 @@ from watchtower.core.assessment import DOMAIN_KINDS
 from watchtower.core.runner import format_command
 from watchtower.core.targets import normalize_domain
 from watchtower.gui.context import AppContext
-from watchtower.gui.ui import restore_tip, tip
+from watchtower.gui.ui import follow, restore_tip, tip
 from watchtower.gui.worker import run_in_background
+from watchtower.storage import preferences as prefs
 
 
 class _Lines(QObject):
@@ -97,6 +98,8 @@ class DomainAuditTab(QWidget):
                                "more sources. Greyed-out entries say why when you hover."))
         self.sub_minutes = QSpinBox(minimum=1, maximum=60, value=10, suffix=" min")
         tip(self.sub_minutes, 'Give up after this long.')
+        follow(ctx, prefs.SUBDOMAIN_MINUTES, self.sub_minutes.setValue)
+        follow(ctx, prefs.DKIM_SELECTORS, self.selectors.setText)
         self.sub_btn = QPushButton("Find subdomains")
         tip(self.sub_btn, ("List names under this domain found in public data (Certificate Transparency, passive "
                            "DNS). Nothing is sent to your servers."))

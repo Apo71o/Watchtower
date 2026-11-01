@@ -55,6 +55,9 @@ All 11 build steps are done, plus one-click fixes:
   in the background via a systemd user timer, with desktop notifications on alerts
 - **Report export:** self-contained HTML pentest-style report (optional PDF via WeasyPrint)
 - **Live NVD lookups** (opt-in in Settings): CVEs for every service version nmap identified
+- **Settings:** theme, text size, start tab, help panels, Command Console (also View menu, Ctrl+`), desktop
+  notifications, and defaults for every tool (scan profile, capture length/interface, time limits, DKIM selectors,
+  findings filter, report title/author), all applied immediately with one-click reset
 - Audit log viewer/export, command console, help panels, glossary, a "Where to start" guide, and an
   explanation (tooltip) on every button and field
 

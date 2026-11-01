@@ -39,8 +39,9 @@ from watchtower.core.platform_utils import data_dir, is_linux
 from watchtower.core.risk_scoring import KIND_LABEL
 from watchtower.gui.context import AppContext
 from watchtower.gui.run_dialog import RunPlanDialog
-from watchtower.gui.ui import tip
+from watchtower.gui.ui import follow, set_combo, tip
 from watchtower.gui.worker import run_in_background
+from watchtower.storage import preferences as prefs
 from watchtower.storage.audit_log import Event
 
 SEV_COLORS = {"Critical": "#b71c1c", "High": "#e53935", "Medium": "#ef6c00", "Low": "#f9a825", "Info": "#757575"}
@@ -97,6 +98,7 @@ class FindingsTab(QWidget):
         tip(self.min_sev, 'Hide findings below this severity.')
         self.min_sev.addItems(["All severities", "Low and above", "Medium and above", "High and above",
                                "Critical only"])
+        follow(ctx, prefs.FINDINGS_MIN_SEVERITY, lambda v: set_combo(self.min_sev, v))
         self.include_unauth = QCheckBox("Include unauthorized Wi-Fi networks")
         tip(self.include_unauth, ("Also assess nearby Wi-Fi networks you haven't marked Authorized, from what they "
                                   "broadcast (useful to compare with neighbours; nothing is sent to them)."))

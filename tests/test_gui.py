@@ -738,3 +738,71 @@ def test_command_console_can_be_hidden_and_remembers(ctx):
     win2.console_action.trigger()
     QApplication.processEvents()
     assert win2.console_dock.isVisible() and ctx.settings.get(CONSOLE_VISIBLE) is True
+
+
+def test_settings_options_apply_live_and_reset(ctx):
+    from PySide6.QtWidgets import QCheckBox, QComboBox, QLineEdit, QSpinBox
+
+    from watchtower.gui.main_window import MainWindow
+    from watchtower.gui.report_export import ExportDialog
+    from watchtower.storage import preferences as prefs
+    from watchtower.storage.settings import CONSOLE_VISIBLE
+    win = MainWindow(ctx)
+    win.show()
+    QApplication.processEvents()
+    st = win.settings_tab
+    assert set(st.pref_widgets) == {p.key for p in prefs.PREFS}      # every option has a control
+    w = st.pref_widgets
+    base = QApplication.font().pointSizeF()
+    w[prefs.FONT_SIZE].setCurrentText("Extra large")
+    assert QApplication.font().pointSizeF() == pytest.approx(base + 4)
+    w[prefs.HELP_PANELS].setChecked(False)
+    assert not any(p.help.toggle.isChecked() for p in win.pages.values())
+    w[prefs.HELP_PANELS].setChecked(True)
+    assert win.pages["scan"].help.toggle.isChecked() and not win.pages["findings"].help.toggle.isChecked()
+    w[prefs.NIKTO_MINUTES].setValue(45)
+    assert win.web_audit_tab.nikto_minutes.value() == 45
+    w[prefs.SCAN_PROFILE].setCurrentText("Quick scan")
+    assert win.scan_tab.profile.currentText() == "Quick scan"
+    w[prefs.FINDINGS_MIN_SEVERITY].setCurrentText("High and above")
+    assert win.findings_tab.min_sev.currentText() == "High and above"
+    w[prefs.SCHEDULE_INTERVAL].setCurrentText("Weekly")
+    assert win.changes_tab.s_interval.currentText() == "Weekly" and win.traffic_tab.every.currentText() == "Weekly"
+    w[prefs.TRAFFIC_DURATION].setCurrentText("5 minutes")
+    assert win.traffic_tab.duration.currentText() == "5 minutes"
+    w[prefs.DKIM_SELECTORS].setText("selector1, google")
+    w[prefs.DKIM_SELECTORS].editingFinished.emit()
+    assert win.domain_audit_tab.selectors.text() == "selector1, google"
+    w[prefs.REPORT_TITLE].setText("Lab Q4")
+    w[prefs.REPORT_TITLE].editingFinished.emit()
+    w[prefs.REPORT_INCLUDE_INFO].setChecked(True)
+    dlg = ExportDialog(ctx, False, None)
+    assert dlg.title.text() == "Lab Q4" and dlg.include_info.isChecked()
+    # console: Settings checkbox and View menu stay in sync both ways
+    w[CONSOLE_VISIBLE].setChecked(False)
+    QApplication.processEvents()
+    assert not win.console_dock.isVisible() and not win.console_action.isChecked()
+    win.console_action.trigger()
+    QApplication.processEvents()
+    assert win.console_dock.isVisible() and w[CONSOLE_VISIBLE].isChecked()
+    # start tab
+    w[prefs.START_TAB].setCurrentText("Findings")
+    win2 = MainWindow(ctx)
+    assert win2.tabs.currentWidget() is win2.pages["findings"]
+    # reset puts everything back, live
+    st.reset_defaults(confirm=lambda: True)
+    QApplication.processEvents()
+    assert QApplication.font().pointSizeF() == pytest.approx(base)
+    assert win.web_audit_tab.nikto_minutes.value() == 30 and w[prefs.NIKTO_MINUTES].value() == 30
+    assert win.scan_tab.profile.currentText() == "Intense scan" and w[prefs.REPORT_TITLE].text() == \
+        "Home lab security assessment"
+    for key, wid in w.items():
+        assert isinstance(wid, (QCheckBox, QComboBox, QLineEdit, QSpinBox)) and wid.toolTip(), key
+
+
+def test_start_tab_last_used(ctx):
+    from watchtower.gui.main_window import MainWindow
+    win = MainWindow(ctx)
+    win.tabs.setCurrentWidget(win.pages["traffic"])
+    win2 = MainWindow(ctx)
+    assert win2.tabs.currentWidget() is win2.pages["traffic"]

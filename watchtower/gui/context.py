@@ -39,6 +39,7 @@ class Bus(QObject):
     audit_finished = Signal()                # new Host/Web/Domain Audit results stored
     domains_changed = Signal()               # owned-domain list changed
     captures_changed = Signal()              # a traffic capture finished / was deleted
+    settings_changed = Signal(str)           # a preference changed (key); "*" after reset to defaults
     dependencies_changed = Signal()
 
 

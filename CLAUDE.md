@@ -73,6 +73,9 @@ watchtower/
                          parse_fields() -> Event (names only, never secrets) -> findings(); stats; diff_captures()
   core/traffic_hosts.py  per-device rundown (rundown(), host_markdown(), host_brief()), opt-in ping_scan() of an
                          authorized <= /22 local network (nmap -sn, stored as a normal scan)
+  storage/preferences.py PREFS registry of user options (section, label, kind, default, tooltip, choices);
+                         get() falls back to the default for missing/invalid values; reset_all()
+  gui/ui.py              follow(ctx, KEY, apply): apply a preference now + on bus.settings_changed; set_combo()
   gui/ui.py              tip()/restore_tip(): every control's tooltip (enforced by test_every_control_explains_itself)
   storage/db.py          SQLite + MIGRATIONS list (append new entries, never edit old ones)
   storage/audit_log.py   append-only log (DB triggers block UPDATE/DELETE); Event enum
@@ -287,6 +290,13 @@ Same rules: authorized/own targets only, ownership gate for new target types, ev
       devices" = nmap ping scan after the capture, only if the interface network is authorized and <= /22.
       Fixture traffic_lan.pcapng: REAL capture on a bridge between Linux network namespaces (router, Raspberry
       Pi MAC, Apple MAC, TEST-NET "internet" server) with DHCP/ARP/DNS/TLS/HTTP/FTP/Telnet/SSDP/mDNS/LLMNR.
+- [x] Settings & customization (user request 2026-11-01): storage/preferences.py registry; Settings tab builds its
+      controls from it (scrollable, grouped by section, "Reset these options to defaults"), saves immediately and
+      emits bus.settings_changed(key) ("*" after reset). Applied live via gui.ui.follow(): text size
+      (theme.apply_font_size), help panels open, Command Console (kept in sync with View menu, Ctrl+`), start tab
+      (incl. last used, remembered in ui.last_tab), desktop notifications, scan profile/OS detection, schedule
+      interval, Traffic Audit length/interface/quiet-device default, nikto/subdomain limits, DKIM selectors, Findings
+      severity filter, report title/author/include-Info. New option = one Pref entry + a follow() where it applies.
 - [x] GUI clarity pass (2026-11-01): tooltips on every control (gui/ui.py + enforcing tests), Help Overview rewritten
       with a "Where to start" goal->tab table and accurate network-call list, first launch opens Help, stale help
       texts fixed (Audit Log, Settings), "Data && history" mnemonic bug, plain status bar, NVD checkbox label.

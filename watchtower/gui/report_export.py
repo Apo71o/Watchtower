@@ -27,6 +27,7 @@ from watchtower.core.assessment import assess
 from watchtower.gui.context import AppContext
 from watchtower.gui.ui import restore_tip, tip
 from watchtower.gui.worker import run_in_background
+from watchtower.storage import preferences as prefs
 from watchtower.storage.audit_log import Event
 
 
@@ -63,9 +64,10 @@ class ExportDialog(QDialog):
         self.ctx, self.include_unauth, self.msf_index = ctx, include_unauthorized_wifi, msf_index
         self.setWindowTitle("Export report")
         self.setMinimumWidth(560)
-        self.title = QLineEdit("Home lab security assessment")
-        self.author = QLineEdit(getpass.getuser())
+        self.title = QLineEdit(prefs.get(ctx.settings, prefs.REPORT_TITLE))
+        self.author = QLineEdit(prefs.get(ctx.settings, prefs.REPORT_AUTHOR) or getpass.getuser())
         self.include_info = QCheckBox("Include Info-level findings (e.g. CVEs already fixed by distro updates)")
+        self.include_info.setChecked(prefs.get(ctx.settings, prefs.REPORT_INCLUDE_INFO))
         self.pdf = QCheckBox("Also create a PDF")
         tip(self.title, "The report's title, shown at the top of the first page.")
         tip(self.author, "Your name, shown under the title.")

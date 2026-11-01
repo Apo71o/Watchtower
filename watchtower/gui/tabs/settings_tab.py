@@ -4,12 +4,15 @@ from PySide6.QtWidgets import (
     QCheckBox,
     QComboBox,
     QFormLayout,
+    QFrame,
+    QGridLayout,
     QGroupBox,
     QHBoxLayout,
     QLabel,
     QLineEdit,
     QMessageBox,
     QPushButton,
+    QScrollArea,
     QSpinBox,
     QVBoxLayout,
     QWidget,
@@ -19,6 +22,7 @@ from watchtower.core.platform_utils import data_dir
 from watchtower.gui.context import AppContext
 from watchtower.gui.theme import apply_theme
 from watchtower.gui.ui import tip
+from watchtower.storage import preferences as prefs
 from watchtower.storage.audit_log import Event
 from watchtower.storage.settings import NVD_API_KEY, NVD_ENABLED, RETENTION_DAYS, THEME
 
@@ -64,15 +68,33 @@ class SettingsTab(QWidget):
         clear.clicked.connect(lambda: (ctx.nvd.clear(), ctx.bus.audit_finished.emit()))
         nf.addRow(clear)
 
-        # Appearance
-        look_box = QGroupBox("Appearance")
+        # Preferences, generated from storage/preferences.py (one group per section)
         self.theme = QComboBox()
         tip(self.theme, "Light, dark, or follow your system's setting.")
         self.theme.addItems(["system", "light", "dark"])
         self.theme.setCurrentText(ctx.settings.get(THEME, "system"))
         self.theme.currentTextChanged.connect(self._theme)
-        lf = QFormLayout(look_box)
-        lf.addRow("Theme:", self.theme)
+        self.pref_widgets: dict[str, QWidget] = {}
+        groups = QGridLayout()
+        for i, section in enumerate(prefs.SECTIONS):
+            box = QGroupBox(section.replace("&", "&&"))
+            form = QFormLayout(box)
+            if section == "Appearance":
+                form.addRow("Theme:", self.theme)
+            for p in [p for p in prefs.PREFS if p.section == section]:
+                w = self._pref_widget(p)
+                self.pref_widgets[p.key] = w
+                if p.kind == "bool":
+                    form.addRow(w)
+                else:
+                    form.addRow(p.label + ":", w)
+            groups.addWidget(box, i // 2, i % 2)
+        self.reset_btn = QPushButton("Reset these options to defaults")
+        tip(self.reset_btn, "Put every option above (appearance, notifications, defaults for the tools, findings & "
+                            "reports) back to how Watchtower ships. Your targets, domains, scans, captures, NVD "
+                            "setting and API key are not touched.")
+        self.reset_btn.clicked.connect(self.reset_defaults)
+        ctx.bus.settings_changed.connect(self._external_change)
 
         # Data & history
         data_box = QGroupBox("Data && history")
@@ -96,15 +118,86 @@ class SettingsTab(QWidget):
         info = QLabel(f"Data directory: {data_dir()}\nDatabase: {ctx.db.path}")
         info.setWordWrap(True)
 
-        row = QHBoxLayout()
-        row.addWidget(nvd_box)
-        row.addWidget(look_box)
-        lay = QVBoxLayout(self)
-        lay.addLayout(row)
+        intro = QLabel("Changes are saved and take effect immediately. Hover over any option for what it does.")
+        intro.setWordWrap(True)
+        reset_row = QHBoxLayout()
+        reset_row.addStretch()
+        reset_row.addWidget(self.reset_btn)
+        body = QWidget()
+        lay = QVBoxLayout(body)
+        lay.addWidget(intro)
+        lay.addLayout(groups)
+        lay.addLayout(reset_row)
+        lay.addWidget(nvd_box)
         lay.addWidget(data_box)
         lay.addWidget(info)
         lay.addStretch()
+        scroll = QScrollArea()
+        scroll.setWidgetResizable(True)
+        scroll.setFrameShape(QFrame.Shape.NoFrame)
+        scroll.setWidget(body)
+        outer = QVBoxLayout(self)
+        outer.setContentsMargins(0, 0, 0, 0)
+        outer.addWidget(scroll)
         self._refresh_data_info()
+
+    # ---- preferences ----
+    def _pref_widget(self, p: prefs.Pref) -> QWidget:
+        value = prefs.get(self.ctx.settings, p.key)
+        if p.kind == "bool":
+            w = QCheckBox(p.label)
+            w.setChecked(value)
+            w.toggled.connect(lambda v, k=p.key: self._save(k, v))
+        elif p.kind == "int":
+            w = QSpinBox(minimum=p.minimum, maximum=p.maximum, value=value)
+            w.setSuffix(p.suffix)
+            w.valueChanged.connect(lambda v, k=p.key: self._save(k, v))
+        elif p.kind == "choice":
+            w = QComboBox()
+            w.addItems(prefs.choices_for(p))
+            w.setCurrentText(value)
+            w.currentTextChanged.connect(lambda v, k=p.key: self._save(k, v))
+        else:
+            w = QLineEdit(value)
+            w.setPlaceholderText(p.placeholder)
+            w.editingFinished.connect(lambda k=p.key, w=w: self._save(k, w.text().strip()))
+        tip(w, p.tip)
+        return w
+
+    def _save(self, key: str, value):
+        if prefs.get(self.ctx.settings, key) == value and self.ctx.settings.get(key) is not None:
+            return
+        prefs.set(self.ctx.settings, key, value)
+        self.ctx.bus.settings_changed.emit(key)
+
+    def _show_value(self, key: str):
+        w, value = self.pref_widgets.get(key), prefs.get(self.ctx.settings, key)
+        if w is None:
+            return
+        w.blockSignals(True)
+        if isinstance(w, QCheckBox):
+            w.setChecked(value)
+        elif isinstance(w, QSpinBox):
+            w.setValue(value)
+        elif isinstance(w, QComboBox):
+            w.setCurrentText(value)
+        else:
+            w.setText(value)
+        w.blockSignals(False)
+
+    def _external_change(self, key: str):
+        for k in (self.pref_widgets if key == "*" else [key]):
+            self._show_value(k)
+
+    def reset_defaults(self, confirm=None):
+        ask = confirm or (lambda: QMessageBox.question(
+            self, "Reset options", "Put all options on this page back to their defaults?\n\nYour targets, "
+            "domains, scans, captures and NVD settings stay as they are.") == QMessageBox.StandardButton.Yes)
+        if not ask():
+            return
+        prefs.reset_all(self.ctx.settings)
+        self.ctx.audit.append(Event.CONFIRMATION, detail={"action": "reset options to defaults"})
+        self.ctx.bus.settings_changed.emit("*")
 
     def _refresh_data_info(self):
         n = self.ctx.scans.targets()

@@ -336,6 +336,21 @@ Export it to CSV or JSON for your write-ups.
 """,
 "settings": """
 ### Settings
+Everything here is saved and applied immediately. Hover over an option for
+what it does; **Reset these options to defaults** puts them back (your targets,
+domains, scans, captures and NVD settings are never touched).
+
+- **Appearance:** theme, text size, whether each tab's "What is this?" panel
+  starts open, the Command Console (also View → Command Console), and which tab
+  Watchtower opens on.
+- **Notifications:** desktop pop-ups when a scheduled scan or capture finds an
+  alert.
+- **Defaults for the tools:** the scan profile and OS detection in Scan a
+  Target, the repeat interval for schedules, Traffic Audit's capture length,
+  preferred interface and "find quiet devices", nikto and subdomain time limits,
+  and your DKIM selectors.
+- **Findings & reports:** the severity filter Findings opens with, and the
+  title, author and "include Info" choice pre-filled when exporting a report.
 - **Vulnerability data (NVD):** off by default. When on, Findings looks up
   known vulnerabilities (CVEs) for the software versions nmap found, on the
   NIST National Vulnerability Database website. A free API key makes lookups

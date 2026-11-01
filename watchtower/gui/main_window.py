@@ -24,6 +24,9 @@ from watchtower.gui.tabs.scan_tab import ScanTab
 from watchtower.gui.tabs.settings_tab import SettingsTab
 from watchtower.gui.tabs.traffic_tab import TrafficTab
 from watchtower.gui.tabs.web_audit_tab import WebAuditTab
+from watchtower.gui.theme import apply_font_size
+from watchtower.gui.ui import follow
+from watchtower.storage import preferences as prefs
 from watchtower.storage.settings import CONSOLE_VISIBLE, DEPS_REVIEWED
 
 
@@ -55,7 +58,6 @@ class MainWindow(QMainWindow):
         add("scan", "Scan a Target", self.scan_tab)
         self.findings_tab = FindingsTab(ctx)
         add("findings", "Findings", self.findings_tab)
-        self.pages["findings"].help.toggle.setChecked(False)   # the detail pane explains each finding
         self.host_audit_tab = HostAuditTab(ctx)
         add("host_audit", "Host Audit", self.host_audit_tab)
         self.web_audit_tab = WebAuditTab(ctx)
@@ -72,7 +74,6 @@ class MainWindow(QMainWindow):
         add("audit_log", "Audit Log", self.audit_tab)
         self.help_tab = HelpTab(ctx)
         add("help", "Help", self.help_tab, help_key="help")
-        self.pages["help"].help.toggle.setChecked(False)
         self.settings_tab = SettingsTab(ctx)
         add("settings", "Settings", self.settings_tab)
         self.setCentralWidget(self.tabs)
@@ -118,10 +119,39 @@ class MainWindow(QMainWindow):
 
         self.statusBar().showMessage(ctx.platform.summary())
 
+        # Preferences (Settings tab), applied now and live when changed
+        follow(ctx, prefs.FONT_SIZE, lambda v: apply_font_size(prefs.FONT_SIZES[v]))
+        follow(ctx, prefs.HELP_PANELS, self._apply_help_panels)
+        ctx.bus.settings_changed.connect(
+            lambda k: k in (CONSOLE_VISIBLE, "*") and dock.setVisible(prefs.get(ctx.settings, CONSOLE_VISIBLE)))
+        self._open_start_tab()
+        self.tabs.currentChanged.connect(self._remember_tab)
+
+    PAGE_FOR_START = {"Help (Where to start)": "help", "Findings": "findings", "Scan a Target": "scan",
+                      "Nearby Networks": "nearby", "Traffic Audit": "traffic"}
+
+    def _open_start_tab(self):
+        choice = prefs.get(self.ctx.settings, prefs.START_TAB)
+        key = (self.ctx.settings.get(prefs.LAST_TAB) if choice == "Last tab used"
+               else self.PAGE_FOR_START.get(choice))
+        page = self.pages.get(key or "")
+        if page is not None and self.tabs.isTabEnabled(self.tabs.indexOf(page)):
+            self.tabs.setCurrentWidget(page)
+
+    def _remember_tab(self, idx: int):
+        key = next((k for k, p in self.pages.items() if self.tabs.widget(idx) is p), None)
+        if key:
+            self.ctx.settings.set(prefs.LAST_TAB, key)
+
+    def _apply_help_panels(self, show: bool):
+        for key, page in self.pages.items():
+            # Findings explains each item in its detail pane and Help is the help: those start collapsed.
+            page.help.toggle.setChecked(show and key not in ("findings", "help"))
+
     def notify(self, title: str, message: str):
         """Desktop notification (tray balloon where available) plus the status bar."""
         self.statusBar().showMessage(f"{title}: {message}", 30000)
-        if QSystemTrayIcon.isSystemTrayAvailable():
+        if prefs.get(self.ctx.settings, prefs.NOTIFY_DESKTOP) and QSystemTrayIcon.isSystemTrayAvailable():
             if not hasattr(self, "_tray"):
                 self._tray = QSystemTrayIcon(self.windowIcon() or self.style().standardIcon(
                     QStyle.StandardPixmap.SP_MessageBoxWarning), self)
@@ -129,8 +159,9 @@ class MainWindow(QMainWindow):
             self._tray.showMessage(title, message, QSystemTrayIcon.MessageIcon.Warning, 10000)
 
     def _console_visibility_changed(self, visible: bool):
-        if self.isVisible() and not self.isMinimized():
+        if self.isVisible() and not self.isMinimized() and self.ctx.settings.get(CONSOLE_VISIBLE, True) != visible:
             self.ctx.settings.set(CONSOLE_VISIBLE, visible)
+            self.ctx.bus.settings_changed.emit(CONSOLE_VISIBLE)     # keep the Settings checkbox in sync
 
     def _show_command(self, command: str, purpose: str):
         ts = datetime.now().strftime("%H:%M:%S")

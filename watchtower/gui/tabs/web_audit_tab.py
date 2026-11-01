@@ -31,8 +31,9 @@ from watchtower.core.assessment import WEB_KINDS
 from watchtower.core.runner import format_command
 from watchtower.core.targets import parse_url
 from watchtower.gui.context import AppContext
-from watchtower.gui.ui import restore_tip, tip
+from watchtower.gui.ui import follow, restore_tip, tip
 from watchtower.gui.worker import run_in_background
+from watchtower.storage import preferences as prefs
 
 
 class _Lines(QObject):
@@ -77,6 +78,7 @@ class WebAuditTab(QWidget):
         nikto_box = QGroupBox("Web server scan (nikto)")
         self.nikto_minutes = QSpinBox(minimum=1, maximum=240, value=30, suffix=" min")
         self.nikto_minutes.setToolTip("nikto -maxtime: stop the scan after this long.")
+        follow(ctx, prefs.NIKTO_MINUTES, self.nikto_minutes.setValue)
         self.nikto_btn = QPushButton("Run nikto")
         tip(self.nikto_btn, ("Scan the web server with nikto for exposed files, outdated software and "
                              "misconfiguration (without default-login or DoS tests). Takes several minutes."))
