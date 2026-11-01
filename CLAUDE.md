@@ -49,7 +49,7 @@ watchtower/
                          elevate() (pkexec), terminal_argv() (sudo-in-a-terminal fallback)
   core/targets.py        parse_target() / in_scope(): IPs, CIDRs, nmap ranges, hostnames
   core/interfaces.py     iw dev / iw list / ip -j addr parsing, set_mode_plan() (monitor <-> managed)
-  core/wifi_scan.py      nmcli / iwlist / airodump-ng CSV parsers, managed_scan(), airodump_argv()
+  core/wifi_scan.py      nmcli / iw scan / iwlist / airodump-ng CSV parsers, managed_scan(), airodump_argv()
   core/nmap_runner.py    PROFILES, build() (scope-checks every target incl. extra args), parse_xml()
   storage/db.py          SQLite + MIGRATIONS list (append new entries, never edit old ones)
   storage/audit_log.py   append-only log (DB triggers block UPDATE/DELETE); Event enum
@@ -87,8 +87,11 @@ docs/SPEC.md             original build prompt (authoritative requirements)
 
 ## Known gaps / notes for later steps
 
-- WPS status is only known from `iwlist` scans (vendor IE 00:50:F2:04); nmcli and airodump-ng CSV
-  don't report it (shown as "?"). Step 5 can add `iw dev <if> scan` (root) for WPS details.
+- WPS status comes from `iw dev <if> scan` (root; "WPS:" section) or legacy `iwlist` (vendor IE
+  00:50:F2:04). nmcli and airodump-ng CSV don't report it (shown as "?").
+- The user's machine runs Ubuntu 26.04: wireless-tools (iwlist) is no longer packaged there.
+  `deps.check_all()` asks `apt-cache policy` which packages exist and the installer skips the rest.
+  Prefer iw/nmcli over iwlist in new code.
 - Scans are stored as raw nmap XML in `scans.raw_output`; steps 4 and 8 should parse from there
   (`nmap_runner.parse_xml`) rather than adding a second results schema unless needed.
 - Monitor-mode and airodump-ng paths are unit-tested against fixtures only; the cloud container
@@ -98,11 +101,12 @@ docs/SPEC.md             original build prompt (authoritative requirements)
 
 - [x] 1. Skeleton, platform detection, dependency check screen, authorization gate,
         SQLite storage, audit log (+ viewer/export, command console, help panels, glossary)
-- [x] 2. Interface detection + monitor/managed switching, nearby network scan (nmcli/iwlist,
+- [x] 2. Interface detection + monitor/managed switching, nearby network scan (nmcli/iw/iwlist,
         airodump-ng listen with client stations), per-network Authorized checkbox, Investigate
 - [x] 3. nmap with profiles/options/free-form args, authorized-target list with scope checks,
         live output, cancel, XML parsing, results tree, scan history, --privileged / pkexec /
-        Windows relaunch-as-admin
+        Windows relaunch-as-admin. Profiles use nmap's own names (Zenmap's standard profiles) plus
+        a Scan type picker with nmap's technique names (-sS, -sT, -sU, -sX, ...), each explained
 - [ ] 4. Findings engine with a small bundled dataset in `watchtower/data/`, remediation,
         risk scoring, MITRE ATT&CK tags
 - [ ] 5. Wi-Fi advisor findings (open/WEP/WPA1/WPA2-PSK/WPS), advisory text only

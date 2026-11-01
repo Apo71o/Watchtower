@@ -19,6 +19,7 @@ from pathlib import Path
 from watchtower.core.platform_utils import OS, current_os, is_elevated, is_linux, is_windows
 from watchtower.core.runner import CommandRunner, CommandUnavailable, format_command
 
+_PKG_RE = re.compile(r"^[a-z0-9][a-z0-9.+-]*$")
 _VERSION_RE = re.compile(r"(\d+\.\d+(?:\.\d+)?(?:[a-z]\d*)?)")
 
 
@@ -49,6 +50,7 @@ class ToolStatus:
     detail: str = ""
     install_hint: str = ""
     extra: dict = field(default_factory=dict)
+    installable: bool | None = None   # False: this distro has no package for it (None = unknown)
 
 
 TOOLS: list[Tool] = [
@@ -64,8 +66,9 @@ TOOLS: list[Tool] = [
          (OS.LINUX,), ("iw",), ("--version",), apt_package="iw"),
     Tool("nmcli", "nmcli (NetworkManager)", "Managed-mode scan of nearby networks without monitor mode.",
          (OS.LINUX,), ("nmcli",), ("--version",), apt_package="network-manager", optional=True),
-    Tool("iwlist", "iwlist (wireless-tools)", "Legacy managed-mode scan; fallback when nmcli is absent.",
-         (OS.LINUX,), ("iwlist",), ("--version",), apt_package="wireless-tools", optional=True),
+    Tool("iwlist", "iwlist (wireless-tools)", "Legacy managed-mode scan. Not needed: nmcli or iw cover it.",
+         (OS.LINUX,), ("iwlist",), ("--version",), apt_package="wireless-tools", optional=True,
+         note="Obsolete; removed from newer Ubuntu/Debian releases."),
     Tool("airodump-ng", "airodump-ng", "Passive monitor-mode listing of APs and clients (listen-only).",
          (OS.LINUX,), ("airodump-ng",), ("--help",), apt_package="aircrack-ng", needs_raw_sockets=True,
          note="The aircrack-ng package ships several tools; Watchtower only ever runs airodump-ng, read-only."),
@@ -196,8 +199,47 @@ def check_tool(tool: Tool, runner: CommandRunner | None = None) -> ToolStatus:
     return ToolStatus(tool, False, install_hint=hint)
 
 
+def parse_apt_policy(text: str) -> dict[str, bool]:
+    """`apt-cache policy a b c` -> {pkg: has an installation candidate}. Packages
+    apt has never heard of are simply absent from the output."""
+    out: dict[str, bool] = {}
+    pkg = None
+    for line in text.splitlines():
+        if line and not line[0].isspace() and line.rstrip().endswith(":"):
+            pkg = line.rstrip()[:-1]
+            out[pkg] = False
+        elif pkg and line.strip().startswith("Candidate:"):
+            out[pkg] = line.split(":", 1)[1].strip() not in ("(none)", "")
+    return out
+
+
+def apt_availability(packages: list[str], runner: CommandRunner) -> dict[str, bool]:
+    """Which packages this machine's apt sources can install (no root needed)."""
+    apt_cache = find_binary("apt-cache")
+    pkgs = sorted({p for p in packages if _PKG_RE.match(p)})
+    if not apt_cache or not pkgs:
+        return {}
+    try:
+        res = runner.run([apt_cache, "policy", *pkgs], purpose="dependency check: which packages are available",
+                         timeout=60)
+    except CommandUnavailable:
+        return {}
+    found = parse_apt_policy(res.stdout)
+    return {p: found.get(p, False) for p in pkgs}
+
+
 def check_all(runner: CommandRunner | None = None) -> list[ToolStatus]:
-    return [check_tool(t, runner) for t in tools_for_platform()]
+    statuses = [check_tool(t, runner) for t in tools_for_platform()]
+    if runner is not None and is_linux():
+        missing = [s for s in statuses if not s.present and s.tool.apt_package]
+        avail = apt_availability([s.tool.apt_package for s in missing], runner)
+        for s in missing:
+            if s.tool.apt_package in avail:
+                s.installable = avail[s.tool.apt_package]
+                if not s.installable:
+                    s.install_hint = (f"not available for this OS release (apt has no '{s.tool.apt_package}')"
+                                      + (f"; {s.tool.manual_url}" if s.tool.manual_url else ""))
+    return statuses
 
 
 class DependencyState:
@@ -231,9 +273,6 @@ class DependencyState:
 
 
 # ---- install / privilege plans (always shown to the user and confirmed) ----
-
-
-_PKG_RE = re.compile(r"^[a-z0-9][a-z0-9.+-]*$")
 
 
 @dataclass
@@ -284,7 +323,10 @@ def install_plan(missing: list[ToolStatus], python: str | None = None) -> Plan:
     pip_mods = [s.tool.python_module for s in missing
                 if s.tool.python_module and not (is_linux() and s.tool.apt_package)]
     if is_linux():
-        pkgs = [s.tool.apt_package for s in missing if s.tool.apt_package]
+        for s in missing:
+            if s.tool.apt_package and s.installable is False:
+                manual.append(f"{s.tool.name}: skipped, {s.install_hint}")
+        pkgs = [s.tool.apt_package for s in missing if s.tool.apt_package and s.installable is not False]
         if pkgs:
             script = apt_script(pkgs)
             steps.append(Step("Install system packages with apt", ["/bin/sh", "-c", script], True, script))

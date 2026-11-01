@@ -116,7 +116,7 @@ def test_scan_tab_end_to_end(ctx):
         ctx.targets.add("127.0.0.1")
         tab = ScanTab(ctx)
         tab.target.setText("127.0.0.1")
-        tab.profile.setCurrentText("Custom (only my extra arguments)")
+        tab.profile.setCurrentText("Custom (only my options)")
         tab.extra.setText(f"-sT -sV -p {port} -Pn")
         assert tab.run_btn.isEnabled(), tab.preview.text()
         tab.run_scan()

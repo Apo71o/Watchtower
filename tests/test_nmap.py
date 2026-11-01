@@ -6,7 +6,7 @@ from watchtower.core import nmap_runner as nr
 from watchtower.core.targets import in_scope, parse_target
 
 FX = Path(__file__).parent / "fixtures"
-Q = "Quick (top 1000 TCP ports + versions)"
+Q = "Regular scan"
 
 
 @pytest.mark.parametrize("expr,size", [
@@ -108,3 +108,33 @@ def test_target_store(db):
         ts.add("not a target!")
     ts.remove("192.168.1.0/24")
     assert ts.values() == []
+
+
+def test_profiles_and_scan_types_use_nmap_names():
+    assert {"Intense scan", "Quick scan", "Quick scan plus", "Ping scan", "Regular scan",
+            "Slow comprehensive scan"} <= set(nr.PROFILES)
+    assert nr.PROFILES["Intense scan"][0] == ["-T4", "-A", "-v"]
+    assert all(desc for _a, desc in nr.PROFILES.values())
+    assert nr.SCAN_TYPES["TCP Xmas scan (-sX)"][0] == "-sX"
+    assert all(desc for _f, desc in nr.SCAN_TYPES.values())
+
+
+def test_scan_type_replaces_profile_tcp_technique():
+    cmd = nr.build("nmap", "10.0.0.1", "Intense scan plus UDP", scan_type="TCP connect scan (-sT)",
+                   authorized=["10.0.0.1"])
+    assert "-sT" in cmd.argv and "-sS" not in cmd.argv and "-sU" in cmd.argv
+    cmd = nr.build("nmap", "10.0.0.1", "Ping scan", scan_type="TCP SYN scan (-sS)", authorized=["10.0.0.1"])
+    assert "-sS" not in cmd.argv   # ping-only profiles ignore the scan type
+
+
+def test_all_ports_replaces_port_selection():
+    for profile in ("Quick scan", "Intense scan, all TCP ports"):
+        a = nr.build("nmap", "10.0.0.1", profile, all_ports=True, authorized=["10.0.0.1"]).argv
+        assert "-p-" in a and "-F" not in a and "1-65535" not in a
+    a = nr.build("nmap", "10.0.0.1", "Regular scan", all_ports=True, extra="-p 80", authorized=["10.0.0.1"]).argv
+    assert "-p-" not in a and "80" in a   # explicit -p in extra args wins
+
+
+def test_user_ports_override_profile_port_selection():
+    a = nr.build("nmap", "10.0.0.1", "Quick scan plus", extra="-p 1-1024", authorized=["10.0.0.1"]).argv
+    assert "-F" not in a and "1-1024" in a

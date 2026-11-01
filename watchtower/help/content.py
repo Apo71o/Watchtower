@@ -26,9 +26,10 @@ hands the adapter back to NetworkManager so it reconnects.
 ### Nearby Networks
 **What it does:** lists every access point in range: SSID, BSSID, channel,
 encryption, WPS and signal strength. Two methods:
-- **Managed scan** (`nmcli`, else `iwlist`): the same scan your OS runs to fill
-  its Wi-Fi menu. Works with any adapter and keeps you connected. `iwlist` also
-  reveals whether an AP advertises **WPS**.
+- **Managed scan**: the same scan your OS runs to fill its Wi-Fi menu. Works
+  with any adapter and keeps you connected. Pick the tool: `nmcli` (no password)
+  or `iw` (asks for your password, and also reveals whether an AP advertises
+  **WPS**). Legacy `iwlist` is used if installed.
 - **Monitor-mode listen** (`airodump-ng`): purely passive listening on every
   channel for the time you choose. It also sees **client devices** and which
   network each one is talking to or probing for. Needs a monitor-capable adapter

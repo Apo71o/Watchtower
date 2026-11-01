@@ -25,7 +25,7 @@ Then install the security tools you want (or let the Dependency Check screen do 
 after showing you the command):
 
 ```bash
-sudo apt install nmap iw aircrack-ng snmp testssl.sh
+sudo apt install nmap iw aircrack-ng network-manager snmp testssl.sh
 ```
 
 | Tool | Package | Used for |
@@ -33,7 +33,8 @@ sudo apt install nmap iw aircrack-ng snmp testssl.sh
 | nmap | `nmap` | Host/port/service/version scanning |
 | iw | `iw` | Listing Wi-Fi interfaces and monitor-mode support |
 | airodump-ng | `aircrack-ng` | Passive, listen-only AP/client listing (the only tool from that package Watchtower runs) |
-| nmcli / iwlist | `network-manager` / `wireless-tools` | Managed-mode nearby-network scan (optional) |
+| nmcli | `network-manager` | Nearby-network scan without a password (usually preinstalled) |
+| iwlist | `wireless-tools` | Obsolete and not needed (`iw` replaces it); missing from newer Ubuntu/Debian, and the installer skips it there |
 | sslyze *or* testssl.sh | `pip install sslyze` into the venv / `testssl.sh` | TLS audit (optional) |
 | snmpget/snmpwalk | `snmp` | Read-only SNMP community-string check (optional) |
 | Metasploit | [Rapid7 installer](https://docs.metasploit.com/docs/using-metasploit/getting-started/nightly-installers.html) | Module-name cross-reference only (optional) |

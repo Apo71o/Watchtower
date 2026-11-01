@@ -21,6 +21,7 @@ from PySide6.QtWidgets import (
     QMessageBox,
     QPlainTextEdit,
     QPushButton,
+    QSizePolicy,
     QSplitter,
     QTabWidget,
     QTreeWidget,
@@ -89,7 +90,19 @@ class ScanTab(QWidget):
         # --- scan form ---
         self.target = QLineEdit(placeholderText="e.g. 192.168.1.10  or  192.168.1.0/24")
         self.profile = QComboBox()
-        self.profile.addItems(list(nr.PROFILES))
+        for name, (args, desc) in nr.PROFILES.items():
+            self.profile.addItem(name)
+            tip = (f"nmap {' '.join(args)}\n\n" if args else "") + desc
+            self.profile.setItemData(self.profile.count() - 1, tip, Qt.ItemDataRole.ToolTipRole)
+        self.scan_type = QComboBox()
+        for name, (_flag, desc) in nr.SCAN_TYPES.items():
+            self.scan_type.addItem(name)
+            self.scan_type.setItemData(self.scan_type.count() - 1, desc, Qt.ItemDataRole.ToolTipRole)
+        self.explain = QLabel()
+        self.explain.setWordWrap(True)
+        self.explain.setStyleSheet("color: palette(placeholder-text);")
+        self.explain.setAlignment(Qt.AlignmentFlag.AlignTop | Qt.AlignmentFlag.AlignLeft)
+        self.explain.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Maximum)
         self.os_detect = QCheckBox("OS detection (-O)")
         self.all_ports = QCheckBox("All TCP ports (-p-)")
         self.vuln = QCheckBox("Vulnerability scripts (--script vuln)")
@@ -108,7 +121,11 @@ class ScanTab(QWidget):
         self.status.setWordWrap(True)
         form = QFormLayout()
         form.addRow("Target(s):", self.target)
-        form.addRow("Profile:", self.profile)
+        prof_row = QHBoxLayout()
+        prof_row.addWidget(self.profile, 1)
+        prof_row.addWidget(QLabel("Scan type:"))
+        prof_row.addWidget(self.scan_type, 1)
+        form.addRow("Profile:", prof_row)
         opts = QHBoxLayout()
         for w in (self.os_detect, self.all_ports, self.vuln):
             opts.addWidget(w)
@@ -137,6 +154,7 @@ class ScanTab(QWidget):
         rl = QVBoxLayout(right)
         rl.setContentsMargins(0, 0, 0, 0)
         rl.addLayout(form)
+        rl.addWidget(self.explain)
         rl.addLayout(btns)
         rl.addWidget(self.results_tabs, 1)
 
@@ -152,6 +170,7 @@ class ScanTab(QWidget):
         for w in (self.os_detect, self.all_ports, self.vuln):
             w.toggled.connect(self._update_preview)
         self.profile.currentTextChanged.connect(self._update_preview)
+        self.scan_type.currentTextChanged.connect(self._update_preview)
         self.vuln.toggled.connect(self._vuln_warning)
         self.run_btn.clicked.connect(self.run_scan)
         self.cancel_btn.clicked.connect(self._cancel)
@@ -206,11 +225,29 @@ class ScanTab(QWidget):
         nmap = self.ctx.deps.path("nmap") or deps.find_binary("nmap")
         if not nmap:
             raise nr.ScopeError(self.ctx.deps.reason("nmap"))
-        return nr.build(nmap, self.target.text(), self.profile.currentText(), vuln=self.vuln.isChecked(),
+        scan_type = self.scan_type.currentText() if self.scan_type.isEnabled() else None
+        return nr.build(nmap, self.target.text(), self.profile.currentText(), scan_type=scan_type,
+                        vuln=self.vuln.isChecked(),
                         os_detect=self.os_detect.isChecked(), all_ports=self.all_ports.isChecked(),
                         extra=self.extra.text(), xml_path=xml_path, authorized=self.ctx.targets.values())
 
+    def _explain(self):
+        ping_only = nr.profile_is_ping_only(self.profile.currentText())
+        self.scan_type.setEnabled(not ping_only)
+        self.all_ports.setEnabled(not ping_only)
+        self.scan_type.setToolTip("Ping-only profiles don't scan ports." if ping_only else "")
+        prof_args, prof_desc = nr.PROFILES[self.profile.currentText()]
+        text = f"<b>{_esc(self.profile.currentText())}</b>"
+        if prof_args:
+            text += f" <code>{_esc(' '.join(prof_args))}</code>"
+        text += f": {_esc(prof_desc)}"
+        if not ping_only and self.scan_type.currentIndex() > 0:
+            st = self.scan_type.currentText()
+            text += f"<br><b>{_esc(st)}</b>: {_esc(nr.SCAN_TYPES[st][1])}"
+        self.explain.setText(text)
+
     def _update_preview(self, *_):
+        self._explain()
         if self.cancel_event is not None:
             return
         try:

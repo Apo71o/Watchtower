@@ -21,9 +21,10 @@ Build steps 1-3 of 11 are done:
 
 - Dependency check with a working one-click installer (live output, password prompt or terminal)
 - **Interfaces:** wireless adapters, monitor-mode support, switch monitor/managed mode
-- **Nearby Networks:** managed scan (nmcli/iwlist) or passive monitor-mode listening
+- **Nearby Networks:** managed scan (nmcli or iw) or passive monitor-mode listening
   (airodump-ng, incl. client devices), Authorized checkbox, Investigate
-- **Scan a Target:** nmap with profiles, OS detection, vuln scripts and any extra
+- **Scan a Target:** nmap's standard profiles (Intense scan, Quick scan plus, ...) and scan
+  types (SYN, connect, UDP, Xmas, ...) with explanations, OS detection, vuln scripts and any extra
   options; authorized-target list; live output; results tree; scan history
 - Audit log viewer/export, command console, help panels, glossary
 

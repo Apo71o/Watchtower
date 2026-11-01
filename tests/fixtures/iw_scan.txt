@@ -1,0 +1,59 @@
+BSS aa:bb:cc:00:00:01(on wlan0) -- associated
+	last seen: 1234.567s [boottime]
+	TSF: 123456789 usec (0d, 00:02:03)
+	freq: 2437.0
+	beacon interval: 100 TUs
+	capability: ESS Privacy ShortSlotTime RadioMeasure (0x1411)
+	signal: -45.00 dBm
+	last seen: 120 ms ago
+	SSID: Home Lab
+	Supported rates: 1.0* 2.0* 5.5* 11.0* 6.0 9.0 12.0 18.0
+	DS Parameter set: channel 6
+	RSN:	 * Version: 1
+		 * Group cipher: CCMP
+		 * Pairwise ciphers: CCMP
+		 * Authentication suites: PSK
+		 * Capabilities: 1-PTKSA-RC 1-GTKSA-RC (0x0000)
+	WPS:	 * Version: 1.0
+		 * Wi-Fi Protected Setup State: 2 (Configured)
+		 * Response Type: 3 (AP)
+BSS aa:bb:cc:00:00:07(on wlan0)
+	freq: 5220
+	capability: ESS Privacy SpectrumMgmt ShortSlotTime (0x0511)
+	signal: -61.00 dBm
+	SSID: Modern
+	RSN:	 * Version: 1
+		 * Group cipher: CCMP
+		 * Pairwise ciphers: CCMP
+		 * Authentication suites: PSK SAE
+		 * Capabilities: 16-PTKSA-RC 1-GTKSA-RC MFP-capable (0x00ac)
+BSS aa:bb:cc:00:00:03(on wlan0)
+	freq: 2462
+	capability: ESS Privacy ShortSlotTime (0x0411)
+	signal: -88.00 dBm
+	SSID: OldRouter
+	DS Parameter set: channel 11
+BSS aa:bb:cc:00:00:0a(on wlan0)
+	freq: 2412
+	capability: ESS ShortSlotTime (0x0401)
+	signal: -70.00 dBm
+	SSID: 
+	DS Parameter set: channel 1
+BSS aa:bb:cc:00:00:0b(on wlan0)
+	freq: 2422
+	capability: ESS Privacy (0x0011)
+	signal: -77.00 dBm
+	SSID: Legacy
+	WPA:	 * Version: 1
+		 * Group cipher: TKIP
+		 * Pairwise ciphers: TKIP
+		 * Authentication suites: PSK
+BSS aa:bb:cc:00:00:0c(on wlan0)
+	freq: 5180
+	capability: ESS Privacy (0x0011)
+	signal: -66.00 dBm
+	SSID: CorpNet
+	RSN:	 * Version: 1
+		 * Group cipher: CCMP
+		 * Pairwise ciphers: CCMP
+		 * Authentication suites: IEEE 802.1X

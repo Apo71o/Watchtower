@@ -19,14 +19,70 @@ from watchtower.core import deps
 from watchtower.core.platform_utils import is_elevated, is_linux, is_windows
 from watchtower.core.targets import in_scope, parse_target
 
-PROFILES: dict[str, list[str]] = {
-    "Quick (top 1000 TCP ports + versions)": ["-sV", "-T4"],
-    "Ping sweep (which hosts are up)": ["-sn"],
-    "Full TCP (all 65535 ports + versions)": ["-sV", "-p-", "-T4"],
-    "Intense (versions, OS, default scripts, traceroute)": ["-A", "-T4"],
-    "Top UDP ports": ["-sU", "--top-ports", "100", "-T4"],
-    "Custom (only my extra arguments)": [],
+# nmap's standard scan profiles (the ones Zenmap ships with), with what each does.
+PROFILES: dict[str, tuple[list[str], str]] = {
+    "Intense scan": (["-T4", "-A", "-v"],
+                     "Top 1000 TCP ports with OS detection (-O), version detection (-sV), default NSE "
+                     "scripts (-sC) and traceroute (-A), at aggressive timing (-T4). A good all-round "
+                     "look at a host. Needs root for the OS-detection part."),
+    "Intense scan plus UDP": (["-sS", "-sU", "-T4", "-A", "-v"],
+                              "Intense scan, plus the top 1000 UDP ports (DNS, SNMP, NTP, ...). UDP "
+                              "scanning is slow because closed UDP ports often don't answer. Needs root."),
+    "Intense scan, all TCP ports": (["-p", "1-65535", "-T4", "-A", "-v"],
+                                    "Intense scan across all 65535 TCP ports, so services on unusual "
+                                    "ports aren't missed. Takes much longer."),
+    "Intense scan, no ping": (["-T4", "-A", "-v", "-Pn"],
+                              "Intense scan that skips host discovery (-Pn) and treats the target as up. "
+                              "Use when a firewall blocks pings and nmap would otherwise report the host down."),
+    "Ping scan": (["-sn"],
+                  "Host discovery only (-sn): which addresses are up, with no port scan. Fast way to "
+                  "inventory a subnet."),
+    "Quick scan": (["-T4", "-F"],
+                   "Top 100 TCP ports (-F) at aggressive timing. Fastest useful port scan, no versions."),
+    "Quick scan plus": (["-sV", "-T4", "-O", "-F", "--version-light"],
+                        "Top 100 TCP ports with light version detection and OS detection. Needs root for -O."),
+    "Quick traceroute": (["-sn", "--traceroute"],
+                         "Host discovery plus the network path (routers) to each host, without a port scan. "
+                         "Needs root."),
+    "Regular scan": ([],
+                     "nmap with no options: host discovery, then the top 1000 TCP ports. SYN scan when "
+                     "privileged, otherwise TCP connect scan. No version detection."),
+    "Slow comprehensive scan": (["-sS", "-sU", "-T4", "-A", "-v", "-PE", "-PP", "-PS80,443", "-PA3389",
+                                 "-PU40125", "-PY", "-g", "53", "--script", "default or (discovery and safe)"],
+                                "Everything in Intense plus UDP, extra host-discovery probes (ICMP echo/"
+                                "timestamp, TCP SYN/ACK, UDP, SCTP), source port 53 to slip past naive "
+                                "firewalls, and the default + safe discovery scripts. Thorough and slow. "
+                                "Needs root."),
+    "Custom (only my options)": ([], "No preset: just the scan type, checkboxes and extra arguments you choose."),
 }
+
+# nmap's port-scan techniques, by their names in the nmap manual.
+SCAN_TYPES: dict[str, tuple[str | None, str]] = {
+    "Default (nmap chooses)": (None, "SYN scan if nmap has raw-socket privileges, otherwise TCP connect scan."),
+    "TCP SYN scan (-sS)": ("-sS", "\"Half-open\" scan: sends SYN, reads SYN/ACK (open) or RST (closed), never "
+                           "completes the handshake. Fast and the most common scan. Needs root."),
+    "TCP connect scan (-sT)": ("-sT", "Completes a full TCP connection through the OS, like any client "
+                               "would. No privileges needed, but slower and logged by more services."),
+    "UDP scan (-sU)": ("-sU", "Sends UDP probes; an ICMP port-unreachable means closed, silence means "
+                       "open|filtered. Finds DNS, SNMP, NTP, TFTP. Slow. Needs root."),
+    "TCP ACK scan (-sA)": ("-sA", "Doesn't find open ports: maps firewall rules, showing which ports are "
+                           "filtered vs unfiltered. Needs root."),
+    "TCP Window scan (-sW)": ("-sW", "Like ACK scan, but reads the TCP window size of RSTs, which on some "
+                              "systems reveals open ports. Needs root."),
+    "TCP Maimon scan (-sM)": ("-sM", "Sends FIN/ACK; some BSD-derived stacks drop it for open ports. Niche. "
+                              "Needs root."),
+    "TCP Null scan (-sN)": ("-sN", "Sends a packet with no TCP flags. Per RFC 793, closed ports answer RST and "
+                            "open ports stay silent. Can slip past stateless filters; unreliable against "
+                            "Windows. Needs root."),
+    "TCP FIN scan (-sF)": ("-sF", "Same idea as Null scan, with just the FIN flag set. Needs root."),
+    "TCP Xmas scan (-sX)": ("-sX", "Same idea as Null scan, with FIN, PSH and URG set (\"lit up like a "
+                            "Christmas tree\"). Needs root."),
+    "SCTP INIT scan (-sY)": ("-sY", "SYN-scan equivalent for SCTP (telecom signalling, some VoIP). Needs root."),
+    "SCTP COOKIE ECHO scan (-sZ)": ("-sZ", "Stealthier SCTP scan; can't tell open from filtered. Needs root."),
+    "IP protocol scan (-sO)": ("-sO", "Finds which IP protocols (TCP, UDP, ICMP, GRE, ...) the host supports, "
+                               "rather than ports. Needs root."),
+}
+
 
 # Options whose following token is a value, not a target.
 VALUE_OPTIONS = {
@@ -112,8 +168,28 @@ class NmapCommand:
     privileged_flag: bool
 
 
-def build(nmap: str, target: str, profile: str, *, vuln: bool = False, os_detect: bool = False,
-          all_ports: bool = False, extra: str = "", xml_path: str = "-",
+def profile_is_ping_only(profile: str) -> bool:
+    return "-sn" in PROFILES.get(profile, ([], ""))[0]
+
+
+def _drop_port_selection(args: list[str]) -> list[str]:
+    """Remove -F / --top-ports N / -p X so an all-ports option can replace them."""
+    out, skip = [], False
+    for a in args:
+        if skip:
+            skip = False
+            continue
+        if a in ("--top-ports", "-p"):
+            skip = True
+            continue
+        if a == "-F" or (a.startswith("-p") and a not in ("-p",) and not a.startswith("-P")):
+            continue
+        out.append(a)
+    return out
+
+
+def build(nmap: str, target: str, profile: str, *, scan_type: str | None = None, vuln: bool = False,
+          os_detect: bool = False, all_ports: bool = False, extra: str = "", xml_path: str = "-",
           authorized: list[str] | None = None) -> NmapCommand:
     """Raises ScopeError if any target isn't covered by `authorized`."""
     main_targets = target.split()
@@ -130,9 +206,20 @@ def build(nmap: str, target: str, profile: str, *, vuln: bool = False, os_detect
         if authorized is not None and not in_scope(t, authorized):
             raise ScopeError(f"{t} is not covered by your authorized targets. Add it (or a network "
                              f"containing it) to the list first.")
-    args = list(PROFILES.get(profile, []))
-    if all_ports and "-p-" not in args and not any(o.startswith("-p") and o != "-p-" for o in opts):
-        args = [a for a in args if a != "--top-ports"] + ["-p-"]
+    args = list(PROFILES.get(profile, ([], ""))[0])
+    flag = SCAN_TYPES.get(scan_type or "", (None, ""))[0]
+    if flag and "-sn" not in args:
+        # a TCP technique replaces the profile's TCP one; -sU and -sO can sit alongside
+        tcp = {"-sS", "-sT", "-sA", "-sW", "-sM", "-sN", "-sF", "-sX"}
+        if flag in tcp:
+            args = [a for a in args if a not in tcp]
+        if flag not in args:
+            args.insert(0, flag)
+    user_ports = any(o == "-p" or (o.startswith("-p") and not o.startswith("-P")) for o in opts)
+    if user_ports:
+        args = _drop_port_selection(args)   # nmap rejects -F/--top-ports together with -p
+    elif all_ports and "-sn" not in args:
+        args = _drop_port_selection(args) + ["-p-"]
     if os_detect and "-A" not in args and "-O" not in args:
         args.append("-O")
     if vuln:

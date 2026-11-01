@@ -19,13 +19,14 @@ from PySide6.QtWidgets import (
 
 from watchtower.core import deps, interfaces, wifi_scan
 from watchtower.core.platform_utils import WIFI_UNSUPPORTED_REASON
+from watchtower.core.runner import format_command
 from watchtower.gui.context import AppContext
 from watchtower.gui.tabs.interfaces_tab import ask_switch_to_monitor
 from watchtower.gui.worker import run_in_background
 
 COLS = ["Authorized", "SSID", "BSSID", "Ch", "Signal", "Security", "Auth", "Cipher", "WPS", "Clients",
         "Connected", "Last seen", "Source"]
-MANAGED, MONITOR = "Managed scan (nmcli / iwlist)", "Monitor-mode listen (airodump-ng)"
+MANAGED, MONITOR = "Managed scan (nmcli / iw)", "Monitor-mode listen (airodump-ng)"
 BANDS = {"2.4 GHz": "bg", "5 GHz": "a", "2.4 + 5 GHz": "abg"}
 WEAK = {"Open": "#c62828", "WEP": "#c62828", "WPA": "#e65100", "WPA/WPA2": "#e65100"}
 
@@ -42,6 +43,8 @@ class NearbyTab(QWidget):
         self.method = QComboBox()
         self.method.addItems([MANAGED, MONITOR])
         self.iface = QComboBox()
+        self.tool = QComboBox()
+        self.tool_lbl = QLabel("Tool:")
         self.duration = QSpinBox(minimum=5, maximum=3600, value=30, suffix=" s")
         self.band = QComboBox()
         self.band.addItems(list(BANDS))
@@ -52,6 +55,8 @@ class NearbyTab(QWidget):
         top = QHBoxLayout()
         top.addWidget(QLabel("Method:"))
         top.addWidget(self.method)
+        top.addWidget(self.tool_lbl)
+        top.addWidget(self.tool)
         top.addWidget(QLabel("Interface:"))
         top.addWidget(self.iface)
         self.dur_lbl = QLabel("Listen for:")
@@ -105,6 +110,7 @@ class NearbyTab(QWidget):
         lay.addWidget(split)
 
         self.method.currentTextChanged.connect(self._method_changed)
+        self.tool.currentIndexChanged.connect(lambda _i: self._set_interfaces(self.ifaces))
         self.scan_btn.clicked.connect(self.scan)
         self.table.itemChanged.connect(self._item_changed)
         self.table.itemSelectionChanged.connect(self._selection_changed)
@@ -121,7 +127,8 @@ class NearbyTab(QWidget):
         self.ifaces = ifaces
         cur = self.iface.currentData()
         self.iface.clear()
-        if self.method.currentText() == MANAGED and deps.find_binary("nmcli"):
+        if self.method.currentText() == MANAGED and self._managed_tool() in ("nmcli", None) \
+                and deps.find_binary("nmcli"):
             self.iface.addItem("(all)", None)
         for i in ifaces:
             label = f"{i.name} [{i.mode}{', monitor-capable' if i.monitor_capable else ''}]"
@@ -134,10 +141,29 @@ class NearbyTab(QWidget):
             if mon is not None:
                 self.iface.setCurrentIndex(mon)
 
+    def _managed_tool(self) -> str | None:
+        return self.tool.currentData()
+
+    def _fill_tools(self):
+        cur = self.tool.currentData()
+        self.tool.blockSignals(True)
+        self.tool.clear()
+        avail = wifi_scan.available_managed_tools()
+        self.tool.addItem("Auto", None)
+        for t in avail:
+            self.tool.addItem(t, t)
+            self.tool.setItemData(self.tool.count() - 1, wifi_scan.MANAGED_TOOLS[t], Qt.ItemDataRole.ToolTipRole)
+        idx = self.tool.findData(cur)
+        self.tool.setCurrentIndex(max(idx, 0))
+        self.tool.blockSignals(False)
+
     def _method_changed(self, text):
         mon = text == MONITOR
         for w in (self.duration, self.dur_lbl, self.band, self.band_lbl):
             w.setVisible(mon)
+        for w in (self.tool, self.tool_lbl):
+            w.setVisible(not mon)
+        self._fill_tools()
         self._set_interfaces(self.ifaces)
         self._gate()
 
@@ -149,8 +175,8 @@ class NearbyTab(QWidget):
         if self.method.currentText() == MONITOR:
             ok, why = self.ctx.deps.available("airodump-ng"), self.ctx.deps.reason("airodump-ng")
         else:
-            ok = bool(deps.find_binary("nmcli") or deps.find_binary("iwlist"))
-            why = "requires nmcli (network-manager) or iwlist (wireless-tools)"
+            ok = bool(wifi_scan.available_managed_tools())
+            why = "requires nmcli (network-manager) or iw"
         self.scan_btn.setEnabled(ok)
         self.scan_btn.setToolTip("" if ok else why)
 
@@ -162,8 +188,24 @@ class NearbyTab(QWidget):
     def scan(self):
         if self.method.currentText() == MANAGED:
             iface = self.iface.currentData()
-            self._busy(f"Scanning with {('nmcli' if deps.find_binary('nmcli') else 'iwlist')}…")
-            run_in_background(wifi_scan.managed_scan, self.ctx.runner, iface,
+            try:
+                argv, tool, needs_root = wifi_scan.managed_scan_argv(iface, self._managed_tool())
+            except (ValueError, RuntimeError) as exc:
+                QMessageBox.information(self, "Scan", str(exc))
+                return
+            if needs_root:
+                wrapped = deps.elevate(argv)
+                if wrapped is None:
+                    QMessageBox.warning(self, "Needs root", f"{tool} scan needs root. Pick nmcli, or start "
+                                        "Watchtower with sudo.")
+                    return
+                if QMessageBox.question(self, "Password needed",
+                                        f"This scan needs root and will ask for your password:\n\n"
+                                        f"{format_command(wrapped)}") != QMessageBox.StandardButton.Yes:
+                    return
+                argv = wrapped
+            self._busy(f"Scanning with {tool}…")
+            run_in_background(wifi_scan.managed_scan, self.ctx.runner, iface, tool, argv,
                               on_done=lambda aps: self._scanned(aps, [], "managed"), on_error=self._failed)
             return
         iface = self._selected_iface()

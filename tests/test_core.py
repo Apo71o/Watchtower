@@ -160,3 +160,42 @@ def test_windows_tool_list_excludes_radio_tools():
     keys = {t.key for t in deps.tools_for_platform(OS.WINDOWS)}
     assert "nmap" in keys and "npcap" in keys
     assert not keys & {"iw", "airodump-ng", "iwlist"}
+
+
+APT_POLICY = """nmap:
+  Installed: (none)
+  Candidate: 7.95+dfsg-1
+  Version table:
+     7.95+dfsg-1 500
+        500 http://archive.ubuntu.com/ubuntu resolute/universe amd64 Packages
+wireless-tools:
+  Installed: (none)
+  Candidate: (none)
+  Version table:
+"""
+
+
+def test_parse_apt_policy():
+    assert deps.parse_apt_policy(APT_POLICY) == {"nmap": True, "wireless-tools": False}
+
+
+def test_install_plan_skips_unavailable_packages(monkeypatch):
+    monkeypatch.setattr(deps, "is_linux", lambda: True)
+    monkeypatch.setattr(deps, "is_windows", lambda: False)
+    by_key = {t.key: t for t in deps.TOOLS}
+    iwlist = deps.ToolStatus(by_key["iwlist"], False, installable=False, install_hint="not available")
+    nmap = deps.ToolStatus(by_key["nmap"], False, installable=True)
+    plan = deps.install_plan([iwlist, nmap])
+    assert "wireless-tools" not in plan.steps[0].script and "nmap" in plan.steps[0].script
+    assert any("iwlist" in m and "skipped" in m for m in plan.manual)
+    only_unavailable = deps.install_plan([iwlist])
+    assert only_unavailable.steps == []
+
+
+def test_check_all_marks_unavailable(db, monkeypatch):
+    monkeypatch.setattr(deps, "is_linux", lambda: True)
+    monkeypatch.setattr(deps, "apt_availability", lambda pkgs, runner: {p: p != "wireless-tools" for p in pkgs})
+    monkeypatch.setattr(deps, "find_binary", lambda *n: None)
+    statuses = {s.tool.key: s for s in deps.check_all(CommandRunner(AuditLog(db)))}
+    assert statuses["iwlist"].installable is False and "not available" in statuses["iwlist"].install_hint
+    assert statuses["nmap"].installable is True

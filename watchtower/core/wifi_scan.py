@@ -204,6 +204,83 @@ def parse_iwlist(text: str) -> list[AccessPoint]:
     return aps
 
 
+# ---- iw dev <if> scan ----
+
+def parse_iw_scan(text: str) -> list[AccessPoint]:
+    aps: list[AccessPoint] = []
+    blocks = re.split(r"(?m)^BSS ", text)
+    for block in blocks[1:]:
+        m = re.match(r"([0-9A-Fa-f:]{17})", block)
+        if not m:
+            continue
+        ap = AccessPoint(bssid=m.group(1).upper(), source="iw", wps=0,
+                         in_use="-- associated" in block.splitlines()[0])
+        privacy = False
+        suites: dict[str, dict[str, str]] = {}
+        section = None
+        for raw in block.splitlines()[1:]:
+            line = raw.strip()
+            if mm := re.match(r"(RSN|WPA|WPS):\s*(\*.*)?$", line):
+                section = mm.group(1)
+                suites[section] = {}
+                line = (mm.group(2) or "").strip()
+                if not line:
+                    continue
+            elif not line.startswith("*"):
+                section = None
+            if section and line.startswith("*"):
+                key, _, val = line[1:].strip().partition(":")
+                suites[section][key.strip()] = val.strip()
+                continue
+            if mm := re.match(r"freq: ([\d.]+)", line):
+                ap.freq = round(float(mm.group(1)))
+            elif mm := re.match(r"signal: (-?[\d.]+) dBm", line):
+                ap.signal_dbm = round(float(mm.group(1)))
+            elif line.startswith("SSID:"):
+                ap.ssid = line[5:].strip()
+            elif mm := re.match(r"DS Parameter set: channel (\d+)", line):
+                ap.channel = int(mm.group(1))
+            elif mm := re.match(r"\* primary channel: (\d+)", line):
+                ap.channel = ap.channel or int(mm.group(1))
+            elif line.startswith("capability:"):
+                privacy = "Privacy" in line.split("(")[0]
+        ap.channel = ap.channel or channel_from_freq(ap.freq)
+        ap.signal_pct = pct_from_dbm(ap.signal_dbm)
+        if "WPS" in suites:
+            ap.wps = 1
+        auth_words: set[str] = set()
+        ciphers: set[str] = set()
+        parts = []
+        for name in ("WPA", "RSN"):
+            if name in suites:
+                auth_words.update(suites[name].get("Authentication suites", "").split())
+                ciphers.update(suites[name].get("Pairwise ciphers", "").split())
+        if "WPA" in suites:
+            parts.append("WPA")
+        if "RSN" in suites:
+            rsn_auth = set(suites["RSN"].get("Authentication suites", "").split())
+            if rsn_auth & {"PSK", "802.1X"} or not rsn_auth or rsn_auth == {"IEEE"}:
+                parts.append("WPA2")
+            if rsn_auth & {"SAE", "FT/SAE", "OWE"}:
+                parts.append("WPA3")
+        if "802.1X" in auth_words or "IEEE" in auth_words:
+            ap.auth = "MGT"
+        elif "OWE" in auth_words:
+            ap.auth = "OWE"
+        elif "SAE" in auth_words:
+            ap.auth = "SAE" if "PSK" not in auth_words else "SAE PSK"
+        elif "PSK" in auth_words:
+            ap.auth = "PSK"
+        elif not privacy:
+            ap.auth = "OPN"
+        raw = " ".join(parts) if parts else ("WEP" if privacy else "")
+        ap.raw_security = raw + (" 802.1X" if ap.auth == "MGT" else "")
+        ap.security = normalize_security(ap.raw_security, ap.auth)
+        ap.cipher = " ".join(sorted(ciphers)) or None
+        aps.append(ap)
+    return aps
+
+
 # ---- airodump-ng CSV ----
 
 def _int(s: str) -> int | None:
@@ -260,28 +337,51 @@ def parse_airodump_csv(text: str) -> tuple[list[AccessPoint], list[Station]]:
 
 # ---- running scans ----
 
-def managed_scan_argv(iface: str | None = None) -> tuple[list[str], str]:
-    nmcli = deps.find_binary("nmcli")
-    if nmcli:
-        argv = [nmcli, "-t", "-f", NMCLI_FIELDS, "device", "wifi", "list", "--rescan", "yes"]
-        if iface:
-            argv += ["ifname", iface]
-        return argv, "nmcli"
-    iwlist = deps.find_binary("iwlist")
-    if iwlist:
-        if not iface:
-            raise ValueError("Choose an interface (iwlist needs one).")
-        return [iwlist, iface, "scan"], "iwlist"
-    raise deps_missing("nmcli")
+MANAGED_TOOLS = {
+    "nmcli": "nmcli (NetworkManager): no password needed, no WPS info",
+    "iw": "iw scan: asks for your password, also shows WPS",
+    "iwlist": "iwlist (legacy wireless-tools), shows WPS",
+}
 
 
-def managed_scan(runner: CommandRunner, iface: str | None = None) -> list[AccessPoint]:
+def available_managed_tools() -> list[str]:
+    return [t for t in MANAGED_TOOLS if deps.find_binary(t)]
+
+
+def managed_scan_argv(iface: str | None = None, tool: str | None = None) -> tuple[list[str], str, bool]:
+    """-> (argv, tool, needs_root). Default tool order: nmcli, iw, iwlist."""
+    tools = [tool] if tool else available_managed_tools()
+    for t in tools:
+        path = deps.find_binary(t)
+        if not path:
+            continue
+        if t == "nmcli":
+            argv = [path, "-t", "-f", NMCLI_FIELDS, "device", "wifi", "list", "--rescan", "yes"]
+            return argv + (["ifname", iface] if iface else []), t, False
+        if not iface or not IFNAME_RE.match(iface):
+            raise ValueError(f"Choose an interface ({t} scans one interface at a time).")
+        if t == "iw":
+            return [path, "dev", iface, "scan"], t, not is_elevated()
+        return [path, iface, "scan"], t, False
+    raise deps_missing(tool or "nmcli")
+
+
+def parse_managed(tool: str, text: str) -> list[AccessPoint]:
+    return {"nmcli": parse_nmcli, "iw": parse_iw_scan, "iwlist": parse_iwlist}[tool](text)
+
+
+def managed_scan(runner: CommandRunner, iface: str | None = None, tool: str | None = None,
+                 argv: list[str] | None = None) -> list[AccessPoint]:
+    """Run a managed-mode scan. Pass `argv` to run an already-elevated command."""
     require_linux("Nearby network scan")
-    argv, tool = managed_scan_argv(iface)
-    res = runner.run(argv, purpose=f"nearby network scan ({tool})", target=iface, timeout=60)
+    built, tool, _ = managed_scan_argv(iface, tool)
+    res = runner.run(argv or built, purpose=f"nearby network scan ({tool})", target=iface, timeout=60)
     if not res.ok:
-        raise RuntimeError(f"{tool} failed (exit {res.exit_code}): {res.output.strip()[-500:]}")
-    return parse_nmcli(res.stdout) if tool == "nmcli" else parse_iwlist(res.stdout)
+        hint = ""
+        if tool == "iw" and "busy" in res.output.lower():
+            hint = " The adapter was busy; try again in a few seconds."
+        raise RuntimeError(f"{tool} failed (exit {res.exit_code}): {res.output.strip()[-500:]}{hint}")
+    return parse_managed(tool, res.stdout)
 
 
 @dataclass

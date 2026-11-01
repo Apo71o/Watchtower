@@ -89,6 +89,8 @@ class DependencyWidget(QWidget):
             name = s.tool.name + ("" if not s.tool.optional else "  (optional)")
             if s.present:
                 state, color = "installed", ok_color
+            elif s.installable is False:
+                state, color = "not packaged", QColor("#757575")
             elif s.tool.optional:
                 state, color = "not installed", opt_color
             else:

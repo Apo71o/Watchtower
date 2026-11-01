@@ -106,3 +106,30 @@ def test_network_store_roundtrip(db):
     assert store.is_authorized("AA:BB:CC:00:00:01")
     assert log.entries()[0].event == "scope_change"
     assert store.forget_unauthorized() == len(rows) - 1
+
+
+def test_parse_iw_scan():
+    aps = {a.bssid: a for a in wifi_scan.parse_iw_scan(read("iw_scan.txt"))}
+    home = aps["AA:BB:CC:00:00:01"]
+    assert home.in_use and home.ssid == "Home Lab" and home.channel == 6 and home.freq == 2437
+    assert home.security == "WPA2" and home.auth == "PSK" and home.wps == 1 and home.signal_dbm == -45
+    modern = aps["AA:BB:CC:00:00:07"]
+    assert modern.security == "WPA2/WPA3" and modern.auth == "SAE PSK" and modern.wps == 0
+    assert modern.channel == 44 and not modern.in_use
+    assert aps["AA:BB:CC:00:00:03"].security == "WEP"
+    assert aps["AA:BB:CC:00:00:0A"].security == "Open" and aps["AA:BB:CC:00:00:0A"].ssid == ""
+    assert aps["AA:BB:CC:00:00:0B"].security == "WPA" and aps["AA:BB:CC:00:00:0B"].cipher == "TKIP"
+    assert aps["AA:BB:CC:00:00:0C"].security == "WPA2-Enterprise" and aps["AA:BB:CC:00:00:0C"].auth == "MGT"
+
+
+def test_managed_scan_tool_order(monkeypatch):
+    present = {"iw": "/usr/sbin/iw"}
+    monkeypatch.setattr(wifi_scan.deps, "find_binary", lambda *n: present.get(n[0]))
+    monkeypatch.setattr(wifi_scan, "is_elevated", lambda: False)
+    argv, tool, root = wifi_scan.managed_scan_argv("wlan0")
+    assert tool == "iw" and argv == ["/usr/sbin/iw", "dev", "wlan0", "scan"] and root
+    present["nmcli"] = "/usr/bin/nmcli"
+    argv, tool, root = wifi_scan.managed_scan_argv(None)
+    assert tool == "nmcli" and not root
+    argv, tool, root = wifi_scan.managed_scan_argv("wlan0", "iw")
+    assert tool == "iw"
