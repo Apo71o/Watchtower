@@ -1,7 +1,9 @@
 from __future__ import annotations
 
+import threading
 from pathlib import Path
 
+from PySide6.QtCore import QObject, Signal
 from PySide6.QtGui import QBrush, QColor, QFont, QGuiApplication
 from PySide6.QtWidgets import (
     QButtonGroup,
@@ -416,19 +418,23 @@ class BreachPanel(QWidget):
 
 
 # --------------------------------------------------------------------------- #
-# Hash Recovery (command generator — never runs anything)                     #
+# Hash Recovery (own hashes/files only)                                       #
 # --------------------------------------------------------------------------- #
 
-class HashRecoveryPanel(QWidget):
-    """Build — but never run — the exact hashcat/John command to recover a
-    password from a hash or file you own (a forgotten ZIP/PDF/Office password,
-    an /etc/shadow backup from your own machine, …).
+class _LineEmitter(QObject):
+    line = Signal(str)
 
-    Consistent with the rest of the app, this is a *command generator*: it shows
-    the exact command (the "Copy commands" pattern) for you to run yourself in a
-    terminal. Watchtower does not execute the recovery, in keeping with the
-    non-negotiable "no attack execution" rule. It is gated on an ownership
-    confirmation and records the generated command in the audit log.
+
+class HashRecoveryPanel(QWidget):
+    """Recover a password from a hash or file you own (a forgotten ZIP/PDF/Office
+    password, an /etc/shadow backup from your own machine, …) with hashcat or John.
+
+    You can either **Run** the recovery here — gated on an ownership confirmation
+    and a warning, run through CommandRunner (argv, logged) with live output and a
+    Cancel button — or **Copy** the exact command and run it yourself in a terminal.
+    Per CLAUDE.md non-negotiable #1, in-app execution is permitted ONLY for
+    recovering your own hashes/files; the app still never runs network attacks,
+    deauth, or any login/default-credential attempts.
     """
 
     def __init__(self, ctx: AppContext, parent=None):
@@ -479,9 +485,15 @@ class HashRecoveryPanel(QWidget):
         tip(self.own_box, ("Required. Watchtower only builds recovery commands for hashes and files you own or are "
                            "authorized to recover. Your confirmation is recorded in the audit log."))
 
-        self.gen_btn = QPushButton("Generate command")
-        tip(self.gen_btn, ("Build the exact command for the options above. Watchtower does not run it — you copy and "
-                           "run it yourself."))
+        self.run_btn = QPushButton("Run recovery")
+        tip(self.run_btn, ("Run the recovery here against the hash file above. You'll see the exact command and a "
+                           "warning first. Only for hashes/files you own."))
+        self.run_btn.setEnabled(False)
+        self.cancel_btn = QPushButton("Cancel")
+        tip(self.cancel_btn, "Stop the running recovery.")
+        self.cancel_btn.setEnabled(False)
+        self.gen_btn = QPushButton("Show command")
+        tip(self.gen_btn, "Build and show the exact command without running it (for running yourself in a terminal).")
         self.gen_btn.setEnabled(False)
         self.copy_btn = QPushButton("Copy command")
         tip(self.copy_btn, "Copy the recovery command so you can run it in a terminal.")
@@ -489,7 +501,12 @@ class HashRecoveryPanel(QWidget):
 
         self.output = QPlainTextEdit(readOnly=True)
         self.output.setFont(QFont("monospace"))
-        self.output.setPlaceholderText("The generated command appears here. Watchtower never runs it.")
+        self.output.setPlaceholderText("The command and any live output / recovered passwords appear here.")
+        self._lines = _LineEmitter()
+        self._lines.line.connect(self.output.appendPlainText)
+        self._running = False
+        self.cancel_event: threading.Event | None = None
+        self._run_job: hc.CrackJob | None = None
 
         form = QFormLayout()
         form.addRow("Tool:", self.tool_combo)
@@ -509,13 +526,15 @@ class HashRecoveryPanel(QWidget):
         form.addRow("Rules:", self.rules_input)
 
         btn_row = QHBoxLayout()
+        btn_row.addWidget(self.run_btn)
+        btn_row.addWidget(self.cancel_btn)
+        btn_row.addStretch()
         btn_row.addWidget(self.gen_btn)
         btn_row.addWidget(self.copy_btn)
-        btn_row.addStretch()
 
-        note = QLabel("Watchtower only builds the command — it never runs a recovery here. Copy it and run it "
-                      "yourself in a terminal. Hashes, files and any recovered passwords stay on this machine; only "
-                      "the command and the hash-file path are written to the audit log.")
+        note = QLabel("Only run this for hashes or files you own. The recovery runs locally (nothing is sent "
+                      "anywhere); the exact command and its start/finish are written to the audit log, but recovered "
+                      "passwords are shown only here, never logged. Prefer your own terminal? Use Copy command.")
         note.setWordWrap(True)
         note.setStyleSheet("color: #757575;")
 
@@ -539,6 +558,8 @@ class HashRecoveryPanel(QWidget):
         self.word_picker.activated.connect(self._pick_wordlist)
         self.word_forget.clicked.connect(self._forget_wordlist)
         self.own_box.toggled.connect(self._update_enabled)
+        self.run_btn.clicked.connect(self._run)
+        self.cancel_btn.clicked.connect(self._cancel)
         self.gen_btn.clicked.connect(self._generate)
         self.copy_btn.clicked.connect(self._copy)
         self.ctx.bus.wordlists_changed.connect(self._refresh_wordlists)
@@ -572,10 +593,13 @@ class HashRecoveryPanel(QWidget):
 
     def _update_enabled(self):
         have_tool = bool(hc.available_tools())
-        ok = self.own_box.isChecked() and have_tool
-        self.gen_btn.setEnabled(ok)
-        restore_tip(self.gen_btn, "" if ok else
-                    ("Install hashcat or John the Ripper first." if not have_tool else "Confirm ownership first."))
+        ok = self.own_box.isChecked() and have_tool and not self._running
+        why = "" if ok else ("Install hashcat or John the Ripper first." if not have_tool
+                             else "Finish the running recovery first." if self._running
+                             else "Confirm ownership first.")
+        for btn in (self.run_btn, self.gen_btn):
+            btn.setEnabled(ok)
+            restore_tip(btn, why)
 
     def _browse_hash(self):
         path, _ = QFileDialog.getOpenFileName(self, "Hash file")
@@ -598,25 +622,30 @@ class HashRecoveryPanel(QWidget):
         extractor = found or f"{kind}2john"
         return format_command([extractor, "<your-document>"]) + " > hash.txt"
 
-    def _generate(self):
-        if not self.own_box.isChecked():
-            return
-        tool = self.tool_combo.currentData()
-        htype = self.type_combo.currentData()
-        hash_file = self.hash_input.text().strip()
-        wordlist = self.word_input.text().strip()
-        rules = self.rules_input.text().strip() or None
+    def _make_job(self):
+        """Build the CrackJob from the current inputs. Returns (job, error_str)."""
         workdir = str(data_dir() / "hash_recovery")
         try:
             Path(workdir).mkdir(parents=True, exist_ok=True)
-            job = hc.build(tool, hash_file, htype, wordlist, workdir, rules)
+            job = hc.build(self.tool_combo.currentData(), self.hash_input.text().strip(),
+                           self.type_combo.currentData(), self.word_input.text().strip(), workdir,
+                           self.rules_input.text().strip() or None)
+            return job, None
         except hc.CrackError as exc:
+            return None, str(exc)
+
+    def _generate(self):
+        if not self.own_box.isChecked():
+            return
+        job, err = self._make_job()
+        if err:
             self._job = None
             self.copy_btn.setEnabled(False)
-            self.output.setPlainText(f"# Could not build the command:\n# {exc}")
+            self.output.setPlainText(f"# Could not build the command:\n# {err}")
             return
 
         self._job = job
+        htype = self.type_combo.currentData()
         crack_cmd = format_command(job.argv)
         show_cmd = format_command(hc.show_argv(job))
         lines: list[str] = []
@@ -631,15 +660,81 @@ class HashRecoveryPanel(QWidget):
         self.output.setPlainText("\n".join(lines))
         self.copy_btn.setEnabled(True)
 
-        # Audit: records the ownership confirmation and the exact command. Watchtower does NOT run it.
+        # Audit: records the ownership confirmation and the exact command (this path does not run it).
         self.ctx.audit.append(
-            Event.CONFIRMATION, command=crack_cmd, target=hash_file or None,
-            detail={"purpose": "hash-recovery command generated (not run by Watchtower)",
-                    "tool": tool, "hash_type": htype.label})
+            Event.CONFIRMATION, command=crack_cmd, target=job.hash_file or None,
+            detail={"purpose": "hash-recovery command generated (not run)",
+                    "tool": job.tool, "hash_type": htype.label})
 
     def _copy(self):
         if self._job:
             QGuiApplication.clipboard().setText(format_command(self._job.argv))
+
+    # ---- run it here (own hashes only; CLAUDE.md non-negotiable #1 carve-out) ----
+    def _run(self):
+        if self._running or not self.own_box.isChecked():
+            return
+        job, err = self._make_job()
+        if err:
+            self.output.setPlainText(f"# Could not build the command:\n# {err}")
+            return
+        command = format_command(job.argv)
+        confirm = QMessageBox.warning(
+            self, "Run password recovery?",
+            "This runs a password-cracking tool against:\n\n"
+            f"    {job.hash_file}\n\n"
+            "Only do this for hashes or files you own or are authorized to recover. It can use heavy CPU/GPU "
+            "and may run for a long time — you can Cancel. The command is:\n\n"
+            f"    {command}",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No, QMessageBox.StandardButton.No)
+        if confirm != QMessageBox.StandardButton.Yes:
+            self.ctx.audit.append(Event.DECLINED, command=command, target=job.hash_file or None,
+                                  detail={"purpose": "hash recovery (in-app run)"})
+            return
+
+        self._run_job = job
+        self.ctx.audit.append(Event.CONFIRMATION, command=command, target=job.hash_file or None,
+                              detail={"purpose": "hash recovery (in-app run authorized)",
+                                      "tool": job.tool, "hash_type": job.hash_type.label})
+        self._running = True
+        self.cancel_event = threading.Event()
+        self.cancel_btn.setEnabled(True)
+        self.copy_btn.setEnabled(False)
+        self._update_enabled()
+        self.output.setPlainText("$ " + command + "\n")
+
+        def work():
+            return self.ctx.runner.stream(job.argv, purpose="hash recovery", target=job.hash_file,
+                                          on_line=self._lines.line.emit, cancel=self.cancel_event)
+
+        run_in_background(work, on_done=self._run_done, on_error=self._run_error)
+
+    def _cancel(self):
+        if self.cancel_event:
+            self.cancel_event.set()
+            self._lines.line.emit("\n# Cancelling…")
+
+    def _reset_after_run(self):
+        self._running = False
+        self.cancel_event = None
+        self.cancel_btn.setEnabled(False)
+        self.copy_btn.setEnabled(self._run_job is not None)
+        self._update_enabled()
+
+    def _run_done(self, result):
+        recovered = hc.read_cracked(self._run_job) if self._run_job else []
+        self._reset_after_run()
+        self._lines.line.emit("")
+        if recovered:
+            self._lines.line.emit(f"# Recovered {len(recovered)} password(s):")
+            for h, pw in recovered:
+                self._lines.line.emit(f"#   {h}:{pw}")
+        else:
+            self._lines.line.emit("# No password recovered (wordlist exhausted, or run cancelled).")
+
+    def _run_error(self, msg: str):
+        self._reset_after_run()
+        self._lines.line.emit("\n# Failed: " + msg.split("\n")[0])
 
     def set_wordlist(self, path: str):
         """Fill in the wordlist path and remember it (used by the Wordlists panel)."""

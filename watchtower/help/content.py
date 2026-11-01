@@ -324,15 +324,16 @@ password has appeared in known breaches — if it has, stop using it.
 
 **Hash Recovery** (`hashcat` / John the Ripper): for a hash or file **you own** —
 a forgotten ZIP/PDF/Office password, an `/etc/shadow` backup from your own
-machine — this builds the exact *dictionary-attack* command and shows it so you
-can **run it yourself in a terminal**. Watchtower never runs the recovery here
-(consistent with the app's no-execution rule); it only generates the command,
-just like "Copy commands" elsewhere. Pick the tool and hash type, point it at
-the hash file and a wordlist, confirm you own the hash, then **Generate
-command** and **Copy command**. Document types (ZIP, RAR, 7-Zip, Office, PDF)
-show the one-off `*2john` step that produces the hash file first. Your hashes,
-files and any recovered passwords stay on this machine; only the generated
-command and the hash-file path are written to the audit log.
+machine — this runs a *dictionary attack* to recover the password. Pick the tool
+and hash type, point it at the hash file and a wordlist, and tick the ownership
+box. Then either **Run recovery** (you see the exact command and a warning
+first; output streams live and there's a **Cancel** button) or **Copy command**
+to run it yourself in a terminal. Document types (ZIP, RAR, 7-Zip, Office, PDF)
+show the one-off `*2john` step that produces the hash file first. The recovery
+runs locally — nothing is sent anywhere — and in-app execution is allowed *only*
+for recovering your own hashes/files; the app still never runs network attacks or
+any login attempts. The command and its start/finish go to the audit log; any
+recovered passwords are shown only on screen, never logged.
 
 **Wordlists**: make and manage the candidate-password lists Hash Recovery uses.
 Lists you build, download or add are **saved**, so you can pick them from the
@@ -628,7 +629,7 @@ GLOSSARY: list[tuple[str, str]] = [
 ("hashcat / John the Ripper",
  "The two standard password-recovery engines. They take a hash (or a *2john extract of a document) and a "
  "wordlist and report any passwords that match. Watchtower uses them only to build the exact command for you "
- "to run on your own hashes — it never runs a recovery itself, and never touches other systems."),
+ "to run on your own hashes — in-app or as a command you copy — and never touches other systems."),
 ("Wordlist",
  "A text file of candidate passwords, one per line, that a recovery tool tries in turn. Building one is just "
  "writing a file — no cracking happens until you run the recovery command yourself. The Wordlists panel can build "

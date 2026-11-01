@@ -504,6 +504,47 @@ def test_hash_recovery_panel_document_type_shows_extractor(ctx, tmp_path):
         assert "zip2john" in out and "Step 1" in out   # one-off extractor command is shown first
 
 
+def test_hash_recovery_run_executes_logs_and_shows_password(ctx, tmp_path, monkeypatch):
+    """The Run button really runs the recovery (own hash), logs the command, and shows the
+    recovered password on screen without writing it to the audit log."""
+    import hashlib
+
+    from watchtower.core import hash_cracker as hc
+    from watchtower.gui.tabs import password_tab as mod
+    if "hashcat" not in hc.available_tools():
+        pytest.skip("hashcat not installed")
+
+    hash_file = tmp_path / "h.txt"
+    hash_file.write_text(hashlib.md5(b"password").hexdigest() + "\n")
+    wordlist = tmp_path / "w.txt"
+    wordlist.write_text("letmein\npassword\nqwerty\n")
+    panel = mod.HashRecoveryPanel(ctx)
+    _select_tool(panel, "hashcat")
+    panel.type_combo.setCurrentIndex(0)   # MD5
+    panel.hash_input.setText(str(hash_file))
+    panel.word_input.setText(str(wordlist))
+
+    # declining the warning runs nothing and logs a decline
+    monkeypatch.setattr(mod.QMessageBox, "warning", lambda *a, **k: mod.QMessageBox.StandardButton.No)
+    panel.own_box.setChecked(True)
+    panel._run()
+    assert not panel._running
+    assert [e for e in ctx.audit.entries() if e.event == "user_declined"]
+    assert not [e for e in ctx.audit.entries() if e.event == "command_start"]
+
+    # accepting it runs the real crack
+    monkeypatch.setattr(mod.QMessageBox, "warning", lambda *a, **k: mod.QMessageBox.StandardButton.Yes)
+    panel._run()
+    assert wait_for(lambda: not panel._running, 60)
+    out = panel.output.toPlainText()
+    assert "Recovered 1 password(s)" in out and "password" in out
+    events = [e.event for e in ctx.audit.entries()]
+    assert "command_start" in events and "command_end" in events and "user_confirmation" in events
+    # the recovered password is shown on screen but never written into the audit log
+    assert not any("password" in (e.detail or "") for e in ctx.audit.entries()
+                   if e.event in ("command_start", "command_end", "user_confirmation"))
+
+
 def test_wordlist_panel_build_merge_and_starter(ctx, tmp_path, monkeypatch):
     from PySide6.QtWidgets import QMessageBox
 

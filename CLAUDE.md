@@ -24,11 +24,19 @@ the "User decisions" section below wins over the spec.
 
 ## Non-negotiables (check every change against these)
 
-1. **No attack execution, ever.** No deauth, handshake/PMKID capture, cracking
-   orchestration, WPS/Pixie-Dust, rogue AP/evil twin/captive portal, or login
-   attempts (including default-credential *tries*). Weaknesses are reported and
-   explained in text. There is no "run it" button anywhere. Do not add one as a
-   stretch goal. If a request would cross this line, say so and stop.
+1. **No attack execution, ever — one scoped exception (below).** No deauth,
+   handshake/PMKID capture, WPS/Pixie-Dust, rogue AP/evil twin/captive portal, or
+   login attempts against anything (including default-credential *tries*). Network
+   weaknesses are reported and explained in text, never exploited. If a request
+   would cross this line, say so and stop. Do not add a "run it" button for any of
+   the above as a stretch goal.
+   **Exception (user decision 2026-11-01):** Password Tools' Hash Recovery MAY run
+   hashcat/John *in-app* to recover a password from a hash or file the user owns —
+   gated on the ownership checkbox + a warning/confirm dialog, run via CommandRunner
+   (argv, logged), with live output and a Cancel button. This is offline recovery of
+   the user's own data, not an action against any third party; recovered passwords
+   are shown on screen only, never written to the audit log. This exception is narrow:
+   it does NOT relax any of the prohibitions above.
 2. **Scope:** passive listening is unrestricted. Anything that sends packets to a
    host (nmap, TLS, SNMP) only runs against networks/hosts flagged authorized in
    SQLite, and only when the user starts it. Never scan a whole subnet unless the
@@ -235,6 +243,15 @@ Same rules: authorized/own targets only, ownership gate for new target types, ev
       with the exact command + hash-file path (never the hash contents or any password). Help + 2
       glossary terms (Dictionary attack; hashcat / John the Ripper) added. 2 GUI tests in test_gui.py
       (verify command shown, NO command_start/end logged, confirmation recorded, extractor hint).
+- [x] P2-1c Run recovery in-app (user decision 2026-11-01, reverses the old "generate-only" design;
+      see non-negotiable #1 exception): HashRecoveryPanel now has a "Run recovery" button beside "Show
+      command"/"Copy command". _run() builds the job, shows a warning/confirm QMessageBox with the exact
+      command (Yes/No; No -> Event.DECLINED), logs Event.CONFIRMATION, then runs via ctx.runner.stream()
+      on a worker thread (run_in_background) with live output into the box and a Cancel button
+      (threading.Event). On finish, hc.read_cracked() shows recovered passwords ON SCREEN ONLY (never
+      logged). Gated on the ownership checkbox + tool availability (shared _make_job() with _generate()).
+      +1 GUI test (real hashcat crack: decline logs nothing-run; accept logs command_start/end +
+      confirmation, shows the password, and keeps it out of the audit log).
 - [x] P2-1b Wordlists panel (user request 2026-11-01): fourth sub-panel "Wordlists" in password_tab.py
       (WordlistPanel) + core/wordlist_builder.py (Qt-free). Four sections: (1) build a targeted list from
       base words with bounded mutations — case/leet/append digits+years+symbols/combine pairs, hard
