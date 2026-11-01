@@ -36,8 +36,11 @@ the "User decisions" section below wins over the spec.
 3. **Transparency:** every external process goes through
    `watchtower.core.runner.CommandRunner.run()` (argv list, never `shell=True`).
    It shows the exact command in the Command Console and writes it to the audit log.
-4. **No network calls** except NVD lookups behind the Settings toggle (off by
-   default), each logged as `Event.NETWORK_REQUEST`.
+4. **No network calls** except: NVD lookups behind the Settings toggle (off by default); and the
+   HaveIBeenPwned "Pwned Passwords" range API, which is user-initiated (clicking Check) and sends
+   only the first 5 hex chars of a password's SHA-1 (k-anonymity) — the password and full hash never
+   leave the machine. Both are logged as `Event.NETWORK_REQUEST`. Breach checking also has a fully
+   offline mode (local HIBP hash file). Password strength analysis (zxcvbn) is entirely local.
 5. **Ask the user** before touching system Wi-Fi interface settings (monitor
    mode) or running anything with sudo/pkexec. Show the command, then confirm.
 6. **Read-only SNMP:** GET/WALK only, never SET.
@@ -178,6 +181,30 @@ docs/SPEC.md             original build prompt (authoritative requirements)
   pruned on startup (app.py) and from Settings "Clean up now". Never prunes audit_log or scope.
 - App icon watchtower/data/watchtower.svg (shield + signal arcs), set as window icon and shipped by
   install.sh to ~/.local/share/icons + referenced from the .desktop (Icon=@ICON@).
+
+## Phase 2 (password / web / email-domain modules) — docs/SPEC-phase2 in chat
+
+Same rules: authorized/own targets only, ownership gate for new target types, every command shown
++ logged, no network calls except opt-in (NVD, HIBP k-anonymity). Build order: 1 hash cracker,
+2 pwned+strength, 3 header audit, 4 nikto/zap, 5 SPF/DKIM/DMARC, 6 subdomain enum (passive),
+7 wire into findings/risk/report.
+
+- [x] P2-cores: core/password_strength.py (zxcvbn + NIST 800-63B checklist; local; basic-entropy
+      fallback), core/pwned_check.py (HIBP range API k-anonymity — sends only the 5-char SHA-1
+      prefix; offline binary-search over a sorted HASH:COUNT file — the search was subtle, see the
+      preceding-byte alignment fix + property test), core/hash_cracker.py (hashcat/john dictionary
+      recovery of OWN hashes/files; *2john extractors; parse results from the potfile, robust across
+      versions). deps.py: hashcat/john/zxcvbn/nikto entries. 14 tests in tests/test_passwords.py,
+      incl. a real hashcat MD5 crack and a brute-force property test of the offline search.
+- [ ] P2-1 GUI: "Password Tools" tab with 3 sub-panels (Hash Cracker / Breach Check / Strength),
+      ownership-attestation gate on the cracker, HIBP request logged as NETWORK_REQUEST, help text.
+      NOT YET BUILT — this is where the next session resumes.
+- [ ] P2-2..7: Web Audit (header_audit.py no-tool + web_scanner.py nikto), Domain Audit
+      (domain_audit.py SPF/DKIM/DMARC via dnspython; subdomain_enum.py passive subfinder/amass),
+      then wire web/domain findings into assess()/report (they have a URL/domain as the "device").
+- hashcat v6 changed --outfile-format to a comma list (1,2 = hash:plain); we read the POTFILE
+  instead (always hash:plain). hashcat needs --force on CPU-only boxes. The container's `john` is
+  the limited "core" build (no --pot=, few formats); real crack tests use hashcat.
 
 ## Cloud vs local
 
