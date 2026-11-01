@@ -107,6 +107,11 @@ also explain how the attack technique works.
 - **Re-scan to verify** reruns the scan for that host.
 Every fix is recorded in the audit log.
 
+**Public exploit** marks CVEs with a ready-made Metasploit module (module names
+only, from a built-in list plus your local Metasploit install if present; read
+from its files, never run). Those findings get +5 risk, because a public exploit
+means low effort for an attacker.
+
 **Top risks** ranks each device 0-100: 6 × its worst CVSS score, plus
 weights for its findings (severity, or the Wi-Fi weakness), plus 1 per open
 port. Click a device to filter the list and see everything known about it.

@@ -148,7 +148,9 @@ docs/SPEC.md             original build prompt (authoritative requirements)
 - [x] 6b. One-click remediation (core/remediation.py): local apt --only-upgrade / stop the systemd
         unit on a port (protected units refused), SSH-in-terminal or copy for remote hosts,
         open admin page (gateway for Wi-Fi), re-scan to verify; Event.REMEDIATION in audit log
-- [ ] 7. Metasploit module cross-reference (module names only)
+- [x] 7. core/exploit_xref.py: bundled CVE->module list + index of local Metasploit module files
+        (reads 'References'/'Name'/Rank from .rb, cached in data_dir/msf_index.json; never runs msf);
+        Finding.exploits, +5 weight (assessment.EXPLOIT_WEIGHT), "Public exploit" column + details
 - [ ] 8. History diff ("What Changed") + scheduler
 - [ ] 9. Report export (HTML, optional PDF via weasyprint). Audit log viewer is already done.
 - [ ] 10. Help/glossary content: ongoing alongside each step

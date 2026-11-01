@@ -17,7 +17,7 @@ CVE lookups, off by default.
 
 ## Status
 
-Build steps 1-6 of 11 are done:
+Build steps 1-7 of 11 are done, plus one-click fixes:
 
 - Dependency check with a working one-click installer (live output, password prompt or terminal)
 - **Interfaces:** wireless adapters, monitor-mode support, switch monitor/managed mode
@@ -31,6 +31,9 @@ Build steps 1-6 of 11 are done:
   0-100 risk score in a Top Risks view
 - **Host Audit:** TLS audit (testssl.sh or SSLyze), read-only SNMP community check, and
   default-credential fingerprinting (report only, never tries a login)
+- **One-click fixes** from Findings: security updates or disabling a risky service on this machine,
+  the same over SSH for your other Linux hosts, or open the device's admin page; then re-scan
+- **Public exploit** flag: CVEs with ready-made Metasploit modules (names only) rank higher
 - Audit log viewer/export, command console, help panels, glossary
 
 What Changed (history diff + scheduler) is next (step 8), then reports and NVD lookups.

@@ -6,7 +6,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 
-from watchtower.core import default_creds, snmp_audit, tls_audit
+from watchtower.core import default_creds, exploit_xref, snmp_audit, tls_audit
 from watchtower.core.findings_engine import SEV_RANK, Finding, host_findings, latest_hosts, unmark_patched
 from watchtower.core.risk_scoring import DeviceRisk, rank
 from watchtower.core.wep_wpa_advisor import wifi_findings
@@ -42,8 +42,11 @@ def audit_findings(row: dict, label: str) -> list[Finding]:
     return []
 
 
+EXPLOIT_WEIGHT = 5   # a public exploit module makes a finding more urgent
+
+
 def assess(scans: list[dict], networks: list[dict], include_unauthorized_wifi: bool = False,
-           host_audits: list[dict] | None = None) -> Assessment:
+           host_audits: list[dict] | None = None, exploit_index: dict | None = None) -> Assessment:
     findings: list[Finding] = []
     open_ports: dict[str, int] = {}
     hosts = latest_hosts(scans)
@@ -70,6 +73,11 @@ def assess(scans: list[dict], networks: list[dict], include_unauthorized_wifi: b
             prev.confidence = "confirmed by nmap script"
             prev.source += f" + {f.source}"
     findings = sorted(seen.values(), key=lambda f: (SEV_RANK[f.severity], -(f.cvss or 0), f.device_label))
+    for f in findings:
+        if f.cve_id:
+            f.exploits = exploit_xref.lookup(f.cve_id, exploit_index)
+            if f.exploits and not f.patched:
+                f.weight += EXPLOIT_WEIGHT
     risks = rank(findings, {**risks_extra, **open_ports})
     for r in risks:
         if r.device in risks_extra and not r.findings:

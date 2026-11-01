@@ -21,16 +21,17 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from watchtower.core import attck_mapping, deps, interfaces, remediation
+from watchtower.core import attck_mapping, deps, exploit_xref, interfaces, remediation
 from watchtower.core.assessment import Assessment, assess
 from watchtower.core.findings_engine import SEV_RANK, SEVERITIES, Finding
-from watchtower.core.platform_utils import is_linux
+from watchtower.core.platform_utils import data_dir, is_linux
 from watchtower.gui.context import AppContext
 from watchtower.gui.run_dialog import RunPlanDialog
+from watchtower.gui.worker import run_in_background
 from watchtower.storage.audit_log import Event
 
 SEV_COLORS = {"Critical": "#b71c1c", "High": "#e53935", "Medium": "#ef6c00", "Low": "#f9a825", "Info": "#757575"}
-FCOLS = ["Severity", "Device", "Finding", "Port / service", "CVE", "CVSS", "ATT&CK"]
+FCOLS = ["Severity", "Device", "Finding", "Port / service", "CVE", "CVSS", "ATT&CK", "Public exploit"]
 RCOLS = ["Risk", "Device", "Type", "#", "Worst"]
 
 
@@ -116,7 +117,7 @@ class FindingsTab(QWidget):
         self.table.horizontalHeader().setSortIndicator(0, Qt.SortOrder.AscendingOrder)   # Critical first
         hh = self.table.horizontalHeader()
         hh.setSectionResizeMode(QHeaderView.ResizeMode.ResizeToContents)
-        for col, width in ((1, 170), (3, 110), (4, 115), (6, 110)):
+        for col, width in ((1, 170), (3, 110), (4, 115), (6, 110), (7, 95)):
             hh.setSectionResizeMode(col, QHeaderView.ResizeMode.Interactive)
             hh.resizeSection(col, width)
         hh.setSectionResizeMode(2, QHeaderView.ResizeMode.Stretch)
@@ -161,11 +162,23 @@ class FindingsTab(QWidget):
         ctx.bus.scan_finished.connect(self.refresh)
         ctx.bus.networks_changed.connect(self.refresh)
         ctx.bus.audit_finished.connect(self.refresh)
+        self._msf_index: dict | None = None
         self.refresh()
+        self._load_msf_index()
+
+    def _load_msf_index(self):
+        """Index local Metasploit module metadata once (reads files only), then refresh."""
+        if exploit_xref.find_modules_dir() is None:
+            return
+
+        def done(index):
+            self._msf_index = index
+            self.refresh()
+        run_in_background(exploit_xref.load_index, data_dir() / "msf_index.json", on_done=done)
 
     def refresh(self):
         self.assessment = assess(self.ctx.scans.with_output(), self.ctx.networks.all(),
-                                 self.include_unauth.isChecked(), self.ctx.audits.latest())
+                                 self.include_unauth.isChecked(), self.ctx.audits.latest(), self._msf_index)
         a = self.assessment
         c = a.counts()
         parts = [f"<span style='color:{SEV_COLORS[s]}'><b>{c[s]}</b> {s}</span>" for s in SEVERITIES if c[s]]
@@ -216,7 +229,9 @@ class FindingsTab(QWidget):
             sev.setData(Qt.ItemDataRole.UserRole, r)
             vals = [sev, _item(f.device_label), _item(f.title), _item(f.port or f.service),
                     _item(f.cve_id), _sitem("" if f.cvss is None else f"{f.cvss:.1f}", f.cvss or 0),
-                    _item(", ".join(f.attck))]
+                    _item(", ".join(f.attck)),
+                    _sitem(f"yes ({len(f.exploits)})" if f.exploits else "", -len(f.exploits),
+                           "#b71c1c" if f.exploits and not f.patched else None)]
             vals[2].setToolTip(f.title)
             vals[6].setToolTip("\n".join(attck_mapping.label(t) for t in f.attck))
             for c, it in enumerate(vals):
@@ -369,6 +384,8 @@ def finding_markdown(f: Finding) -> str:
         lines += _patch_section(f)
     if f.cve_id:
         lines += _cve_section(f)
+    if f.exploits:
+        lines += _exploit_section(f)
     if f.technique:
         lines += ["### How the attack works", "", f.technique, ""]
     lines += ["### How to fix it", "", f.remediation, ""]
@@ -418,6 +435,17 @@ def _patch_section(f: Finding) -> list[str]:
                   f"- Installed version: `apt policy {pkg}`",
                   f"- Whether the fix is in its changelog: `apt changelog {pkg} | grep {cve}`",
                   "- Install pending security updates: `sudo apt update && sudo apt upgrade`", ""]
+    return lines
+
+
+def _exploit_section(f: Finding) -> list[str]:
+    lines = ["### Public exploit modules", "",
+             ("A ready-made Metasploit module exists for this issue, so exploiting it takes no skill. That's why it "
+              "ranks higher. " if not f.patched else "Public modules exist, but this host has the fix installed. ")
+             + "Watchtower never runs these; they're listed so you can prioritize.", "",
+             "| Module | Name | Rank | CVE |", "|---|---|---|---|"]
+    lines += [f"| `{m['module']}` | {_cell(m['name'])} | {m['rank']} | {m['cve']} |" for m in f.exploits]
+    lines.append("")
     return lines
 
 
