@@ -153,6 +153,38 @@ MIGRATIONS: list[str] = [
         added  TEXT NOT NULL
     );
     """,
+    # 7: Traffic Audit captures (live or imported pcap) and scheduled captures
+    """
+    CREATE TABLE captures (
+        id          INTEGER PRIMARY KEY AUTOINCREMENT,
+        source      TEXT NOT NULL,             -- "interface:eth0" | "file:/path/to/x.pcap"
+        pcap_path   TEXT,
+        owned       INTEGER NOT NULL DEFAULT 0, -- 1: Watchtower created the file (may delete it)
+        command     TEXT,
+        started     TEXT NOT NULL,
+        finished    TEXT,
+        exit_code   INTEGER,
+        packets     INTEGER,
+        seconds     REAL,
+        stats_json  TEXT,
+        events_json TEXT,                      -- parsed events only; never secrets
+        error       TEXT,
+        schedule_id INTEGER
+    );
+    CREATE INDEX captures_source ON captures(source, id);
+    CREATE TABLE capture_schedules (
+        id               INTEGER PRIMARY KEY AUTOINCREMENT,
+        interface        TEXT NOT NULL,
+        seconds          INTEGER NOT NULL,
+        user_filter      TEXT NOT NULL DEFAULT '',
+        interval_minutes INTEGER NOT NULL,
+        enabled          INTEGER NOT NULL DEFAULT 1,
+        created          TEXT NOT NULL,
+        last_run         TEXT,
+        next_run         TEXT NOT NULL,
+        last_status      TEXT
+    );
+    """,
 ]
 
 

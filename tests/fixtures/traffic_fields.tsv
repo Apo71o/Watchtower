@@ -1,0 +1,50 @@
+frame.number	frame.protocols	ip.src	ipv6.src	ip.dst	ipv6.dst	tcp.srcport	tcp.dstport	udp.dstport	http.request.method	http.host	http.authorization	urlencoded-form.key	ftp.request.command	pop.request.command	imap.request.command	smtp.req.command	snmp.version	snmp.community	smb.cmd	smb2.cmd	nbns.name	dns.qry.name	dns.flags.response	tls.handshake.type	tls.handshake.version	tls.handshake.extensions.supported_version	tls.handshake.ciphersuite	tls.handshake.extensions_server_name
+4	eth:ethertype:ip:tcp:ftp	127.0.0.1		127.0.0.5		21	41511																					
+6	eth:ethertype:ip:tcp:ftp	127.0.0.5		127.0.0.1		41511	21						USER															
+8	eth:ethertype:ip:tcp:ftp	127.0.0.1		127.0.0.5		21	41511																					
+10	eth:ethertype:ip:tcp:ftp	127.0.0.5		127.0.0.1		41511	21						PASS															
+11	eth:ethertype:ip:tcp:ftp	127.0.0.1		127.0.0.5		21	41511																					
+13	eth:ethertype:ip:tcp:ftp	127.0.0.5		127.0.0.1		41511	21						QUIT															
+14	eth:ethertype:ip:tcp:ftp	127.0.0.1		127.0.0.5		21	41511																					
+22	eth:ethertype:ip:tcp:telnet	127.0.0.1		127.0.0.5		23	60127																					
+24	eth:ethertype:ip:tcp:telnet	127.0.0.5		127.0.0.1		60127	23																					
+26	eth:ethertype:ip:tcp:telnet	127.0.0.1		127.0.0.5		23	60127																					
+28	eth:ethertype:ip:tcp:telnet	127.0.0.5		127.0.0.1		60127	23																					
+29	eth:ethertype:ip:tcp:telnet	127.0.0.1		127.0.0.5		23	60127																					
+39	eth:ethertype:ip:tcp:pop	127.0.0.5		127.0.0.1		48145	110							USER														
+43	eth:ethertype:ip:tcp:pop	127.0.0.5		127.0.0.1		48145	110							PASS														
+46	eth:ethertype:ip:tcp:pop	127.0.0.5		127.0.0.1		48145	110							QUIT														
+57	eth:ethertype:ip:tcp:imap	127.0.0.5		127.0.0.1		51653	143								LOGIN													
+61	eth:ethertype:ip:tcp:imap	127.0.0.5		127.0.0.1		51653	143								LOGOUT													
+72	eth:ethertype:ip:tcp:smtp	127.0.0.5		127.0.0.1		47733	25									EHLO												
+76	eth:ethertype:ip:tcp:smtp	127.0.0.5		127.0.0.1		47733	25									AUTH												
+79	eth:ethertype:ip:tcp:smtp	127.0.0.5		127.0.0.1		47733	25									YWxp												
+82	eth:ethertype:ip:tcp:smtp	127.0.0.5		127.0.0.1		47733	25									czNj												
+85	eth:ethertype:ip:tcp:smtp	127.0.0.5		127.0.0.1		47733	25									QUIT												
+94	eth:ethertype:ip:tcp:http	127.0.0.5		127.0.0.1		52917	80		GET	router.lan	Basic YWRtaW46czNjcmV0LWJhc2lj																	
+106	eth:ethertype:ip:tcp:http:urlencoded-form	127.0.0.6		127.0.0.1		49953	80		POST	nas.lan		username|password|remember																
+118	eth:ethertype:ip:tcp:nbss:smb	127.0.0.7		127.0.0.1		38525	445												0x72									
+125	eth:ethertype:ip:udp:snmp	127.0.0.1		127.0.0.1				161									1	public										
+126	eth:ethertype:ip:icmp:ip:udp:snmp	127.0.0.1|127.0.0.1		127.0.0.1|127.0.0.1				161									1	public										
+127	eth:ethertype:ip:udp:snmp	127.0.0.1		127.0.0.1				161									0	n0tdefault										
+128	eth:ethertype:ip:icmp:ip:udp:snmp	127.0.0.1|127.0.0.1		127.0.0.1|127.0.0.1				161									0	n0tdefault										
+129	eth:ethertype:ip:udp:llmnr	127.0.0.5		127.0.0.1				5355														fileserver	False					
+130	eth:ethertype:ip:icmp:ip:udp:llmnr	127.0.0.1|127.0.0.5		127.0.0.5|127.0.0.1				5355														fileserver	False					
+131	eth:ethertype:ip:udp:llmnr	127.0.0.6		127.0.0.1				5355														wpad	False					
+132	eth:ethertype:ip:icmp:ip:udp:llmnr	127.0.0.1|127.0.0.6		127.0.0.6|127.0.0.1				5355														wpad	False					
+133	eth:ethertype:ip:udp:mdns	127.0.0.6		127.0.0.1				5353														_ipp._tcp.local	False					
+134	eth:ethertype:ip:icmp:ip:udp:mdns	127.0.0.1|127.0.0.6		127.0.0.6|127.0.0.1				5353														_ipp._tcp.local	False					
+135	eth:ethertype:ip:udp:dns	127.0.0.5		127.0.0.1				53														example.com	False					
+136	eth:ethertype:ip:icmp:ip:udp:dns	127.0.0.1|127.0.0.5		127.0.0.5|127.0.0.1				53														example.com	False					
+137	eth:ethertype:ip:udp:dns	127.0.0.7		127.0.0.1				53														wpad.lan	False					
+138	eth:ethertype:ip:icmp:ip:udp:dns	127.0.0.1|127.0.0.7		127.0.0.7|127.0.0.1				53														wpad.lan	False					
+139	eth:ethertype:ip:udp:nbns	127.0.0.5		127.0.0.1				137													FILESERVER<20>							
+140	eth:ethertype:ip:icmp:ip:udp:nbns	127.0.0.1|127.0.0.5		127.0.0.5|127.0.0.1				137													FILESERVER<20>							
+141	eth:ethertype:ip:udp:ssdp	127.0.0.7		127.0.0.1				1900	NOTIFY	239.255.255.250:1900																		
+142	eth:ethertype:ip:icmp:ip:udp:ssdp	127.0.0.1|127.0.0.7		127.0.0.7|127.0.0.1				1900	NOTIFY	239.255.255.250:1900																		
+143	eth:ethertype:ip:udp:ssdp	127.0.0.5		127.0.0.1				1900	M-SEARCH	239.255.255.250:1900																		
+144	eth:ethertype:ip:icmp:ip:udp:ssdp	127.0.0.1|127.0.0.5		127.0.0.5|127.0.0.1				1900	M-SEARCH	239.255.255.250:1900																		
+148	eth:ethertype:ip:tcp:tls	127.0.0.1		127.0.0.1		54184	8443																	1	0x0301		0x002f|0x00ff	old.lan
+150	eth:ethertype:ip:tcp:tls:x509sat:x509sat:x509ce:x509ce:x509ce	127.0.0.1		127.0.0.1		8443	54184																	2|11|14	0x0301		0x002f	
+163	eth:ethertype:ip:tcp:tls	127.0.0.1		127.0.0.1		53792	9443																	1	0x0303	0x0304|0x0303	0x1302|0x1303|0x1301|0xc02c|0xc030|0x009f|0xcca9|0xcca8|0xccaa|0xc02b|0xc02f|0x009e|0xc024|0xc028|0x006b|0xc023|0xc027|0x0067|0xc00a|0xc014|0x0039|0xc009|0xc013|0x0033|0x009d|0x009c|0x003d|0x003c|0x0035|0x002f|0x00ff	new.lan
+165	eth:ethertype:ip:tcp:tls	127.0.0.1		127.0.0.1		9443	53792																	2	0x0303	0x0304	0x1302	

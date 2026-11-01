@@ -239,6 +239,48 @@ it). Nothing here is sent to your own servers.
 The DNS lookups and third-party queries are network requests you start with a
 click; each one is shown in the Command Console and written to the audit log.
 """,
+"traffic": """
+### Traffic Audit
+**What it does:** listens to the traffic on one of your network connections
+(like Wireshark) or opens a capture file, then explains the security problems
+it shows, in plain language, with how to fix each one.
+
+**How to use it**
+1. **Capture live traffic:** pick the interface connected to your network and
+   how long to listen, then click **Start capture**. While it listens, use your
+   devices normally (log in to the router or NAS, check mail, open a file share):
+   that's the traffic Watchtower can check. Click **Stop** to finish early.
+   The first time, click **Allow capturing…** once so capturing works without
+   running Watchtower as root.
+2. **…or open a capture file** made with Wireshark, tcpdump or your router.
+3. *(Optional)* **Repeat automatically:** saves the capture settings and runs
+   them on a schedule. Each run is compared with the previous one in
+   **What Changed**, so a device that starts sending passwords unencrypted shows
+   up as an alert.
+4. Read the results under **What was found**. **Traffic overview** shows who
+   talked to whom and which protocols were used. **Open in Wireshark** shows
+   every packet.
+
+**What it looks for**
+- **Passwords sent without encryption:** FTP, Telnet, POP3, IMAP, SMTP AUTH,
+  HTTP Basic logins and HTTP login forms, and SNMP community strings. Watchtower
+  sees that a login happened; it never shows or saves the password itself.
+- **Risky Windows name lookups:** LLMNR and NetBIOS (NBT-NS) broadcasts, and
+  WPAD proxy lookups. Attack tools answer these to steal Windows logins.
+- **SMBv1** (the protocol WannaCry used), **old TLS** (SSL 3.0, TLS 1.0/1.1) and
+  broken ciphers (RC4, 3DES, export, NULL).
+- **UPnP announcements** (SSDP), **mDNS/Bonjour**, and unencrypted DNS.
+
+**Good to know**
+- Listening sends nothing to the network. On a switched network or Wi-Fi you
+  mostly see this computer's own traffic plus broadcasts from other devices; to
+  see everything, capture on the router or a switch mirror port.
+- Wi-Fi handshakes are never recorded (the filter `not ether proto 0x888e` is
+  always added) and capturing on an interface in monitor mode is refused.
+- Capture files can contain anything that crossed the network, including
+  unencrypted passwords. Watchtower stores the ones it records in its own data
+  folder, readable only by you; **Delete** removes them.
+""",
 "passwords": """
 ### Password Tools
 Check your own passwords for strength and exposure. Everything here is
@@ -413,6 +455,27 @@ GLOSSARY: list[tuple[str, str]] = [
 ("Nikto",
  "An open-source web server scanner that requests thousands of known paths and checks for dangerous files, "
  "outdated software and misconfiguration. Watchtower runs it without its default-login plugin and DoS tests."),
+("Packet capture (pcap)",
+ "A recording of the network packets that crossed an interface, saved as a .pcap or .pcapng file. Wireshark, "
+ "tcpdump and Watchtower's Traffic Audit all read and write this format. A capture can contain anything that was "
+ "sent unencrypted, so treat the file like a password list."),
+("Capture filter (BPF)",
+ "A small expression that decides which packets are recorded, e.g. `host 192.168.1.20` or `port 21`. It uses "
+ "the Berkeley Packet Filter syntax shared by tcpdump and Wireshark's capture filters."),
+("Cleartext protocol",
+ "A protocol that sends data, including passwords, without encryption: FTP, Telnet, HTTP, POP3, IMAP, SNMP v1/v2c. "
+ "Anyone who can see the traffic can read it. Each has an encrypted replacement (SFTP, SSH, HTTPS, POP3S/IMAPS, "
+ "SNMPv3)."),
+("LLMNR / NBT-NS",
+ "Fallback name lookups Windows broadcasts to the whole local network when DNS has no answer. Any device can "
+ "reply, and the asking computer then sends it a login hash. Turning both off is a standard hardening step."),
+("SMBv1",
+ "The original Windows file-sharing protocol from the 1980s. It has no protection against tampering and was the "
+ "way in for WannaCry and NotPetya. Modern systems use SMB 2/3; SMBv1 should be off everywhere."),
+("UPnP / SSDP",
+ "Universal Plug and Play lets devices find each other (SSDP) and change each other's settings without a "
+ "password, for example asking the router to open a port to the internet. Convenient for consoles, risky "
+ "because malware can do the same."),
 ("Backported security fix",
  "Ubuntu and Debian freeze a package's upstream version for the life of a release and apply security fixes as "
  "patches, bumping only the package revision: OpenSSH 8.9p1 on Ubuntu 22.04 went from 3ubuntu0.1 to 3ubuntu0.10 "

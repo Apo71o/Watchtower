@@ -22,6 +22,7 @@ from watchtower.gui.tabs.nearby_tab import NearbyTab
 from watchtower.gui.tabs.password_tab import PasswordTab
 from watchtower.gui.tabs.scan_tab import ScanTab
 from watchtower.gui.tabs.settings_tab import SettingsTab
+from watchtower.gui.tabs.traffic_tab import TrafficTab
 from watchtower.gui.tabs.web_audit_tab import WebAuditTab
 from watchtower.storage.settings import DEPS_REVIEWED
 
@@ -61,6 +62,8 @@ class MainWindow(QMainWindow):
         add("web_audit", "Web Audit", self.web_audit_tab)
         self.domain_audit_tab = DomainAuditTab(ctx)
         add("domain_audit", "Domain Audit", self.domain_audit_tab)
+        self.traffic_tab = TrafficTab(ctx)
+        add("traffic", "Traffic Audit", self.traffic_tab)
         self.changes_tab = ChangesTab(ctx)
         add("changes", "What Changed", self.changes_tab)
         self.password_tab = PasswordTab(ctx)

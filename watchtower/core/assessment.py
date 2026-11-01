@@ -15,6 +15,7 @@ from watchtower.core import (
     snmp_audit,
     subdomain_enum,
     tls_audit,
+    traffic_audit,
     web_scanner,
 )
 from watchtower.core.findings_engine import SEV_RANK, Finding, host_findings, latest_hosts, unmark_patched
@@ -32,6 +33,7 @@ class Assessment:
     networks: dict = field(default_factory=dict)   # BSSID -> network row
     web: dict = field(default_factory=dict)        # URL -> {kind: host_audits row} (Web Audit)
     domains: dict = field(default_factory=dict)    # domain -> {kind: host_audits row} (Domain Audit)
+    captures: list = field(default_factory=list)   # newest capture row per source (Traffic Audit)
 
     def risk_for(self, device: str) -> DeviceRisk | None:
         return next((r for r in self.risks if r.device == device), None)
@@ -43,6 +45,8 @@ class Assessment:
             parts.append(f"{len(self.web)} web URL(s)")
         if self.domains:
             parts.append(f"{len(self.domains)} domain(s)")
+        if self.captures:
+            parts.append(f"{len(self.captures)} traffic capture(s)")
         return ", ".join(parts[:-1]) + " and " + parts[-1]
 
     def counts(self) -> dict[str, int]:
@@ -83,7 +87,7 @@ EXPLOIT_WEIGHT = 5   # a public exploit module makes a finding more urgent
 
 def assess(scans: list[dict], networks: list[dict], include_unauthorized_wifi: bool = False,
            host_audits: list[dict] | None = None, exploit_index: dict | None = None,
-           nvd_cache: dict | None = None) -> Assessment:
+           nvd_cache: dict | None = None, captures: list[dict] | None = None) -> Assessment:
     findings: list[Finding] = []
     open_ports: dict[str, int] = {}
     hosts = latest_hosts(scans)
@@ -102,6 +106,11 @@ def assess(scans: list[dict], networks: list[dict], include_unauthorized_wifi: b
             web.setdefault(row["host"], {})[row["kind"]] = row
         elif row["kind"] in DOMAIN_KINDS:
             domains.setdefault(row["host"], {})[row["kind"]] = row
+    labels = {a: h.label for a, (h, _s) in hosts.items()}
+    for cap in captures or []:
+        src = cap["source"].split(":", 1)
+        name = src[1].rsplit("/", 1)[-1] if src[0] == "file" else f"live capture on {src[-1]}"
+        findings += traffic_audit.findings(traffic_audit.events_from_json(cap.get("events_json")), labels, name)
     nets = [n for n in networks if include_unauthorized_wifi or n.get("authorized")]
     for n in nets:
         findings += wifi_findings(n)
@@ -134,4 +143,5 @@ def assess(scans: list[dict], networks: list[dict], include_unauthorized_wifi: b
             r.kind = "wifi"
             n = next(x for x in nets if x["bssid"] == r.device)
             r.label = f"{n.get('ssid') or '(hidden)'} ({n['bssid']})"
-    return Assessment(findings, risks, len(hosts), len(nets), hosts, {n["bssid"]: n for n in nets}, web, domains)
+    return Assessment(findings, risks, len(hosts), len(nets), hosts, {n["bssid"]: n for n in nets}, web, domains,
+                      list(captures or []))

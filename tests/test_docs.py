@@ -11,11 +11,13 @@ def test_packaged_install_md_matches_top_level():
 
 def test_every_tab_has_help():
     from watchtower.help.content import GLOSSARY, TAB_HELP
-    for key in ["interfaces", "nearby", "scan", "findings", "host_audit", "web_audit", "domain_audit", "changes",
+    for key in ["interfaces", "nearby", "scan", "findings", "host_audit", "web_audit", "domain_audit", "traffic",
+                "changes",
                 "audit_log", "settings", "deps"]:
         assert TAB_HELP.get(key, "").strip(), key
     required = {"WPA / WPA2 / WPA3", "PMKID", "4-way handshake", "WPS (Wi-Fi Protected Setup)",
                 "PSK (Pre-Shared Key)", "CVSS", "CVE", "SNMP community string", "TLS cipher suite",
                 "MITRE ATT&CK", "Risk score", "SPF / DKIM / DMARC", "Certificate Transparency (CT)",
-                "Security headers (HSTS, CSP, X-Frame-Options)", "Cookie flags (Secure, HttpOnly, SameSite)"}
+                "Security headers (HSTS, CSP, X-Frame-Options)", "Cookie flags (Secure, HttpOnly, SameSite)",
+                "Packet capture (pcap)", "Capture filter (BPF)", "LLMNR / NBT-NS", "SMBv1", "UPnP / SSDP"}
     assert required <= {t for t, _ in GLOSSARY}

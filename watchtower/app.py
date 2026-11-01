@@ -96,12 +96,13 @@ def run_scheduled_headless(db) -> int:
     from watchtower.core import deps, scheduler
     from watchtower.core.runner import CommandRunner
     from watchtower.storage.audit_log import AuditLog, Event
-    from watchtower.storage.scope import ScanStore, ScheduleStore, TargetStore
+    from watchtower.storage.scope import CaptureScheduleStore, CaptureStore, ScanStore, ScheduleStore, TargetStore
 
     audit = AuditLog(db)
     audit.append(Event.APP_START, detail={"mode": "scheduled scans (headless)"})
     runner = CommandRunner(audit)
-    results = scheduler.run_due(runner, TargetStore(db, audit), ScanStore(db), ScheduleStore(db, audit))
+    results = scheduler.run_due(runner, TargetStore(db, audit), ScanStore(db), ScheduleStore(db, audit),
+                                CaptureStore(db), CaptureScheduleStore(db, audit))
     for r in results:
         print(f"#{r.schedule_id} {r.target}: {r.status}")
         for c in r.changes:

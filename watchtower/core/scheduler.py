@@ -17,7 +17,7 @@ from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
-from watchtower.core import deps, nmap_runner
+from watchtower.core import deps, nmap_runner, traffic_audit
 from watchtower.core.history_diff import Change, diff_scans
 from watchtower.core.platform_utils import is_linux
 from watchtower.core.runner import CommandRunner, CommandUnavailable, format_command
@@ -98,8 +98,56 @@ def run_schedule(sched: dict, runner: CommandRunner, targets, scans, schedules,
     return finish(f"ok: {len(res.changes)} change(s)" if previous else "ok: first scan (baseline)")
 
 
-def run_due(runner: CommandRunner, targets, scans, schedules) -> list[RunResult]:
-    return [run_schedule(s, runner, targets, scans, schedules) for s in schedules.due()]
+def run_capture_schedule(sched: dict, runner: CommandRunner, captures, capture_schedules,
+                         now: datetime | None = None) -> RunResult:
+    """Run one due scheduled capture (blocking): record, analyze, compare with the previous capture."""
+    now = now or datetime.now(timezone.utc)
+    nxt = next_run_after(now, sched["interval_minutes"])
+    iface = sched["interface"]
+    res = RunResult(sched["id"], f"traffic on {iface}", "ok")
+
+    def finish(status: str) -> RunResult:
+        res.status = status
+        capture_schedules.mark_run(sched["id"], status, _iso(now), nxt)
+        return res
+
+    if not traffic_audit.capture_binary() or not traffic_audit.tshark_binary():
+        return finish("skipped: dumpcap/tshark not installed")
+    out = traffic_audit.new_capture_path(iface)
+    try:
+        argv = traffic_audit.capture_argv(iface, out, sched["seconds"], user_filter=sched["user_filter"],
+                                          monitor_interfaces=traffic_audit.monitor_interfaces(runner))
+    except (ValueError, RuntimeError) as exc:
+        return finish(f"skipped: {exc}")
+    source = f"interface:{iface}"
+    previous = captures.for_source(source, limit=1)
+    cid = captures.start(source, out, True, format_command(argv), schedule_id=sched["id"])
+    try:
+        r = runner.run(argv, purpose=f"scheduled traffic capture #{sched['id']}", target=iface,
+                       timeout=sched["seconds"] + 120)
+    except CommandUnavailable as exc:
+        captures.finish(cid, -1, 0, 0, "{}", "[]", str(exc))
+        return finish(f"failed: {exc}")
+    if r.exit_code != 0 or not Path(out).exists():
+        err = traffic_audit.capture_error(r.stderr, r.exit_code)
+        captures.finish(cid, r.exit_code, 0, 0, "{}", "[]", err)
+        return finish(f"failed: {err}")
+    a = traffic_audit.analyze_pcap(runner, out, target=iface)
+    captures.finish(cid, 0, a.stats.packets, a.stats.seconds, traffic_audit.stats_to_json(a.stats),
+                    traffic_audit.events_to_json(a.events), a.error)
+    if a.error:
+        return finish(f"failed: {a.error}")
+    if previous:
+        res.changes = traffic_audit.diff_captures(traffic_audit.events_from_json(previous[0]["events_json"]),
+                                                  a.events)
+    return finish(f"ok: {len(res.changes)} change(s)" if previous else "ok: first capture (baseline)")
+
+
+def run_due(runner: CommandRunner, targets, scans, schedules, captures=None, capture_schedules=None) -> list[RunResult]:
+    out = [run_schedule(s, runner, targets, scans, schedules) for s in schedules.due()]
+    if captures is not None and capture_schedules is not None:
+        out += [run_capture_schedule(s, runner, captures, capture_schedules) for s in capture_schedules.due()]
+    return out
 
 
 # ---- background timer (systemd --user), Linux only ----

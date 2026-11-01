@@ -20,7 +20,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from watchtower.core import history_diff, nmap_runner, scheduler
+from watchtower.core import history_diff, nmap_runner, scheduler, traffic_audit
 from watchtower.core.platform_utils import data_dir
 from watchtower.gui.context import AppContext
 from watchtower.gui.worker import run_in_background
@@ -29,6 +29,7 @@ from watchtower.storage.settings import SCHED_BACKGROUND
 
 LEVEL_COLORS = {"alert": "#c62828", "notice": "#ef6c00", "good": "#2e7d32", "info": "#757575"}
 WIFI = "__wifi__"
+CAPTURE_PREFIX = "__capture__:"
 
 
 def _ts(s: str | None) -> str:
@@ -133,7 +134,7 @@ class ChangesTab(QWidget):
         self.bg_box.setChecked(bool(ctx.settings.get(SCHED_BACKGROUND, False)))
         self.bg_box.toggled.connect(self._toggle_background)
         self.bg_box.setEnabled(scheduler.background_supported())
-        for sig in (ctx.bus.scan_finished, ctx.bus.networks_changed):
+        for sig in (ctx.bus.scan_finished, ctx.bus.networks_changed, ctx.bus.captures_changed):
             sig.connect(self.reload_sources)
         ctx.bus.targets_changed.connect(self._load_targets)
 
@@ -159,6 +160,13 @@ class ChangesTab(QWidget):
             it = QListWidgetItem(f"{t['target']} ({t['n']} scans)")
             it.setData(Qt.ItemDataRole.UserRole, t["target"])
             self.sources.addItem(it)
+        for c in self.ctx.captures.sources():
+            kind, _, name = c["source"].partition(":")
+            label = f"Traffic on {name}" if kind == "interface" else f"Traffic file {name.rsplit('/', 1)[-1]}"
+            it = QListWidgetItem(f"{label} ({c['n']} captures)")
+            it.setData(Qt.ItemDataRole.UserRole, CAPTURE_PREFIX + c["source"])
+            it.setToolTip("Compare two traffic captures: new cleartext logins, SMBv1, risky name lookups, ...")
+            self.sources.addItem(it)
         self.sources.blockSignals(False)
         row = next((i for i in range(self.sources.count())
                     if self.sources.item(i).data(Qt.ItemDataRole.UserRole) == cur), None)
@@ -176,6 +184,10 @@ class ChangesTab(QWidget):
         if src == WIFI:
             entries = [(s["id"], f"#{s['id']}  {_ts(s['ts'])}  {s['source']} ({s['count']} networks)")
                        for s in self.ctx.networks.snapshots()]
+        elif src and src.startswith(CAPTURE_PREFIX):
+            entries = [(c["id"], f"#{c['id']}  {_ts(c['started'])}  {c['packets'] or 0} packets"
+                        + ("  (scheduled)" if c.get("schedule_id") else ""))
+                       for c in self.ctx.captures.for_source(src[len(CAPTURE_PREFIX):])]
         elif src:
             entries = [(s["id"], f"#{s['id']}  {_ts(s['started'])}" + ("  (scheduled)" if s.get("schedule_id") else ""))
                        for s in self.ctx.scans.for_target(src)]
@@ -196,12 +208,17 @@ class ChangesTab(QWidget):
         src = item.data(Qt.ItemDataRole.UserRole) if item else None
         if self.older.count() < 2:
             self.table.setRowCount(0)
-            self.summary.setText("Run at least two scans of the same target (or two Wi-Fi scans) to see what "
-                                 "changed. Schedules below can do this automatically.")
+            self.summary.setText("Pick a source on the left. You need at least two scans of the same target (or two "
+                                 "Wi-Fi scans, or two traffic captures of the same interface) to see what changed. "
+                                 "Schedules below, and repeating captures in Traffic Audit, do this automatically.")
             return
         a, b = self.older.currentData(), self.newer.currentData()
         if a == b:
             changes = []
+        elif src and src.startswith(CAPTURE_PREFIX):
+            ev = traffic_audit.events_from_json
+            changes = traffic_audit.diff_captures(ev(self.ctx.captures.get(a)["events_json"]),
+                                                  ev(self.ctx.captures.get(b)["events_json"]))
         elif src == WIFI:
             nets = self.ctx.networks
             changes = history_diff.diff_wifi(nets.snapshot(a), nets.snapshot(b), nets.authorized_ssids(),
@@ -293,16 +310,17 @@ class ChangesTab(QWidget):
         """Run due schedules in the background (unless the systemd timer owns them)."""
         if self._running or (self.ctx.settings.get(SCHED_BACKGROUND, False) and not force):
             return
-        due = self.ctx.schedules.due()
+        due = self.ctx.schedules.due() + self.ctx.capture_schedules.due()
         if not due:
             return
         self._running = True
-        self.sched_status.setText(f"Running {len(due)} scheduled scan(s)…")
+        self.sched_status.setText(f"Running {len(due)} scheduled scan(s)/capture(s)…")
 
         def done(results):
             self._running = False
             self.reload_schedules()
             self.ctx.bus.scan_finished.emit()
+            self.ctx.bus.captures_changed.emit()
             alerts = [(r, c) for r in results for c in r.alerts]
             if alerts:
                 self.sched_status.setText("⚠ " + "; ".join(f"{r.target}: {c.title}" for r, c in alerts[:4]))
@@ -315,7 +333,7 @@ class ChangesTab(QWidget):
             self.sched_status.setText("Scheduled run failed: " + msg.split("\n\n")[0])
 
         run_in_background(scheduler.run_due, self.ctx.runner, self.ctx.targets, self.ctx.scans, self.ctx.schedules,
-                          on_done=done, on_error=failed)
+                          self.ctx.captures, self.ctx.capture_schedules, on_done=done, on_error=failed)
 
     def _toggle_background(self, on: bool):
         argvs = scheduler.timer_install_argvs() if on else scheduler.timer_remove_argvs()

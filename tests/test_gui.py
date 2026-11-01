@@ -52,7 +52,8 @@ def test_main_window_builds_without_startup_gate(ctx):
     win = MainWindow(ctx)
     labels = [win.tabs.tabText(i) for i in range(win.tabs.count())]
     assert labels == ["Interfaces", "Nearby Networks", "Scan a Target", "Findings", "Host Audit",
-                      "Web Audit", "Domain Audit", "What Changed", "Password Tools", "Audit Log", "Help", "Settings"]
+                      "Web Audit", "Domain Audit", "Traffic Audit", "What Changed", "Password Tools", "Audit Log",
+                      "Help", "Settings"]
     assert not hasattr(ctx, "authorized")
     ctx.runner.run([sys.executable, "-c", "pass"], purpose="smoke")
     QApplication.processEvents()
@@ -525,3 +526,79 @@ def test_domain_audit_tab_owned_domains_and_dns(ctx):
     assert any(e.command == "DNS TXT _dmarc.weak.example" for e in dns_log)
     row = ctx.audits.latest("weak.example")[0]
     assert row["kind"] == "email"
+
+
+def test_traffic_tab_open_file_schedule_and_changes(ctx, monkeypatch):
+    if not shutil.which("tshark"):
+        pytest.skip("tshark missing")
+    from watchtower.gui.tabs import traffic_tab
+    from watchtower.gui.tabs.changes_tab import CAPTURE_PREFIX, ChangesTab
+    from watchtower.gui.tabs.findings_tab import FindingsTab
+    tab = traffic_tab.TrafficTab(ctx)
+    assert "Nothing analyzed yet" in tab.findings_view.toPlainText()
+    pcap = str(FX / "traffic_lab.pcapng")
+    tab.open_file(pcap)
+    assert wait_for(lambda: tab.cancel_event is None, 60)
+    text = tab.findings_view.toPlainText()
+    for needle in ("password sent unencrypted (FTP)", "How to fix it", "Why it matters", "SMBv1 in use",
+                   "broadcasts LLMNR name lookups"):
+        assert needle in text, needle
+    assert "s3cret" not in text and "YWRtaW46" not in text            # never a password on screen
+    assert "Who talked to whom" in tab.overview.toPlainText()
+    row = ctx.captures.all()[0]
+    assert row["source"] == f"file:{pcap}" and not row["owned"] and row["packets"] == 176
+    # the tshark commands were shown and logged
+    cmds = [e.command or "" for e in ctx.audit.entries(limit=50) if e.event == "command_start"]
+    assert any("tshark" in c and pcap in c for c in cmds)
+    # Findings tab picks the capture up (merged per IP address)
+    ft = FindingsTab(ctx)
+    ft.refresh()
+    assert any(f.kind == "traffic" for f in ft.assessment.findings) and "1 traffic capture(s)" in ft.summary.text()
+    # deleting an imported capture never deletes the user's file
+    monkeypatch.setattr(traffic_tab.QMessageBox, "question",
+                        lambda *a, **k: traffic_tab.QMessageBox.StandardButton.Yes)
+    # open it a second time, compare the two in What Changed (identical -> no changes)
+    tab.open_file(pcap)
+    assert wait_for(lambda: tab.cancel_event is None, 60)
+    ch = ChangesTab(ctx)
+    items = [ch.sources.item(i) for i in range(ch.sources.count())]
+    cap_item = next(i for i in items if str(i.data(Qt.ItemDataRole.UserRole)).startswith(CAPTURE_PREFIX))
+    assert "2 captures" in cap_item.text()
+    ch.sources.setCurrentItem(cap_item)
+    assert ch.older.count() == 2 and "No changes" in ch.summary.text()
+    tab.select_capture(row["id"])
+    tab.delete_capture()
+    assert Path(pcap).exists() and ctx.captures.get(row["id"]) is None
+    # repeating capture from the current settings
+    idx = tab.iface.findData("lo")
+    if idx >= 0:
+        tab.iface.setCurrentIndex(idx)
+        tab.filter.setText("port 53")
+        tab.add_schedule()
+        s = ctx.capture_schedules.all()[0]
+        assert (s["interface"], s["user_filter"], s["seconds"]) == ("lo", "port 53", 60)
+        assert tab.sched_table.rowCount() == 1
+
+
+def test_traffic_tab_live_capture_on_loopback(ctx):
+    from watchtower.core import traffic_audit as ta
+    if not (shutil.which("dumpcap") and shutil.which("tshark")) or ta.capture_permission()[0] is False:
+        pytest.skip("can't capture here")
+    from watchtower.gui.tabs.traffic_tab import TrafficTab
+    tab = TrafficTab(ctx)
+    idx = tab.iface.findData("lo")
+    if idx < 0:
+        pytest.skip("no loopback interface")
+    tab.iface.setCurrentIndex(idx)
+    tab.duration.setCurrentText("30 seconds")
+    assert tab.start_btn.isEnabled()
+    tab.start_capture()
+    assert not tab.progress.isHidden() and tab.cancel_btn.isEnabled()
+    time.sleep(1.5)
+    tab.cancel_btn.click()                               # Stop early: what was recorded is still analyzed
+    assert wait_for(lambda: tab.cancel_event is None, 60)
+    row = ctx.captures.all()[0]
+    assert row["source"] == "interface:lo" and row["owned"] and not row["error"], row["error"]
+    assert Path(row["pcap_path"]).exists() and oct(Path(row["pcap_path"]).stat().st_mode)[-3:] == "600"
+    assert "not ether proto 0x888e" in row["command"]
+    assert "Live capture on lo" in tab.findings_view.toPlainText()

@@ -12,6 +12,8 @@ from watchtower.core.runner import CommandRunner
 from watchtower.storage.audit_log import AuditLog, Entry
 from watchtower.storage.db import Database
 from watchtower.storage.scope import (
+    CaptureScheduleStore,
+    CaptureStore,
     HostAuditStore,
     Maintenance,
     NetworkStore,
@@ -36,6 +38,7 @@ class Bus(QObject):
     networks_changed = Signal()              # Wi-Fi observations or Authorized flags changed
     audit_finished = Signal()                # new Host/Web/Domain Audit results stored
     domains_changed = Signal()               # owned-domain list changed
+    captures_changed = Signal()              # a traffic capture finished / was deleted
     dependencies_changed = Signal()
 
 
@@ -56,6 +59,8 @@ class AppContext:
     nvd: NvdCache
     maintenance: Maintenance
     domains: OwnedDomainStore
+    captures: CaptureStore
+    capture_schedules: CaptureScheduleStore
 
     @classmethod
     def create(cls, db: Database, platform: PlatformInfo) -> AppContext:
@@ -67,7 +72,8 @@ class AppContext:
         runner.on_command(lambda cmd, purpose: bus.command_started.emit(cmd, purpose))
         return cls(db, settings, audit, runner, DependencyState(), platform, bus,
                    NetworkStore(db, audit), TargetStore(db, audit), ScanStore(db), HostAuditStore(db),
-                   ScheduleStore(db, audit), NvdCache(db), Maintenance(db), OwnedDomainStore(db, audit))
+                   ScheduleStore(db, audit), NvdCache(db), Maintenance(db), OwnedDomainStore(db, audit),
+                   CaptureStore(db), CaptureScheduleStore(db, audit))
 
     def log_network(self, command: str, purpose: str, target: str | None = None) -> None:
         """Record an outbound request Watchtower makes itself (not via a subprocess):

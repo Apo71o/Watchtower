@@ -6,6 +6,7 @@ from __future__ import annotations
 import json
 from dataclasses import fields
 from datetime import datetime, timedelta, timezone
+from pathlib import Path
 
 from watchtower.core.targets import domain_covered, in_scope, normalize_domain, parse_target, url_in_scope
 from watchtower.storage.audit_log import AuditLog, Event
@@ -236,6 +237,93 @@ class ScheduleStore:
         self.db.execute("UPDATE schedules SET next_run = ? WHERE id = ?", (now(), sid))
 
 
+class CaptureStore:
+    """Traffic Audit captures. Files Watchtower recorded live are 'owned' and live in
+    data_dir/captures (owner-only); imported files are only referenced, never deleted."""
+
+    def __init__(self, db: Database):
+        self.db = db
+
+    def start(self, source: str, pcap_path: str, owned: bool, command: str, schedule_id: int | None = None) -> int:
+        return self.db.execute(
+            "INSERT INTO captures(source, pcap_path, owned, command, started, schedule_id) VALUES (?, ?, ?, ?, ?, ?)",
+            (source, pcap_path, int(owned), command, now(), schedule_id)).lastrowid
+
+    def finish(self, cid: int, exit_code: int, packets: int, seconds: float, stats_json: str, events_json: str,
+               error: str = "") -> None:
+        self.db.execute("UPDATE captures SET finished = ?, exit_code = ?, packets = ?, seconds = ?, stats_json = ?, "
+                        "events_json = ?, error = ? WHERE id = ?",
+                        (now(), exit_code, packets, seconds, stats_json, events_json, error, cid))
+
+    def get(self, cid: int) -> dict | None:
+        rows = self.db.query("SELECT * FROM captures WHERE id = ?", (cid,))
+        return dict(rows[0]) if rows else None
+
+    def all(self, limit: int = 200) -> list[dict]:
+        return [dict(r) for r in self.db.query("SELECT * FROM captures WHERE finished IS NOT NULL "
+                                               "ORDER BY id DESC LIMIT ?", (limit,))]
+
+    def for_source(self, source: str, limit: int = 100) -> list[dict]:
+        return [dict(r) for r in self.db.query(
+            "SELECT * FROM captures WHERE source = ? AND finished IS NOT NULL AND (error IS NULL OR error = '') "
+            "ORDER BY id DESC LIMIT ?", (source, limit))]
+
+    def sources(self) -> list[dict]:
+        return [dict(r) for r in self.db.query(
+            "SELECT source, COUNT(*) AS n, MAX(started) AS last FROM captures WHERE finished IS NOT NULL "
+            "AND (error IS NULL OR error = '') GROUP BY source ORDER BY last DESC")]
+
+    def latest_per_source(self) -> list[dict]:
+        """Newest successful capture per source: what Findings and the report use."""
+        return [dict(r) for r in self.db.query(
+            "SELECT * FROM captures c WHERE id = (SELECT MAX(id) FROM captures d WHERE d.source = c.source "
+            "AND d.finished IS NOT NULL AND (d.error IS NULL OR d.error = '')) ORDER BY id DESC")]
+
+    def delete(self, cid: int) -> None:
+        row = self.get(cid)
+        if row and row["owned"] and row["pcap_path"]:
+            Path(row["pcap_path"]).unlink(missing_ok=True)
+        self.db.execute("DELETE FROM captures WHERE id = ?", (cid,))
+
+
+class CaptureScheduleStore:
+    def __init__(self, db: Database, audit: AuditLog):
+        self.db, self.audit = db, audit
+
+    def add(self, interface: str, seconds: int, interval_minutes: int, user_filter: str = "") -> int:
+        sid = self.db.execute(
+            "INSERT INTO capture_schedules(interface, seconds, user_filter, interval_minutes, created, next_run) "
+            "VALUES (?, ?, ?, ?, ?, ?)", (interface, int(seconds), user_filter, int(interval_minutes), now(), now())
+        ).lastrowid
+        self.audit.append(Event.SCOPE_CHANGE, target=interface,
+                          detail={"capture_schedule": "added", "id": sid, "seconds": seconds,
+                                  "every_minutes": interval_minutes, "filter": user_filter})
+        return sid
+
+    def all(self) -> list[dict]:
+        return [dict(r) for r in self.db.query("SELECT * FROM capture_schedules ORDER BY id")]
+
+    def due(self, at: str | None = None) -> list[dict]:
+        return [dict(r) for r in self.db.query(
+            "SELECT * FROM capture_schedules WHERE enabled = 1 AND next_run <= ? ORDER BY next_run", (at or now(),))]
+
+    def set_enabled(self, sid: int, enabled: bool) -> None:
+        self.db.execute("UPDATE capture_schedules SET enabled = ? WHERE id = ?", (int(enabled), sid))
+        self.audit.append(Event.SCOPE_CHANGE, detail={"capture_schedule": "enabled" if enabled else "paused",
+                                                      "id": sid})
+
+    def remove(self, sid: int) -> None:
+        self.db.execute("DELETE FROM capture_schedules WHERE id = ?", (sid,))
+        self.audit.append(Event.SCOPE_CHANGE, detail={"capture_schedule": "removed", "id": sid})
+
+    def mark_run(self, sid: int, status: str, run_at: str, next_run: str) -> None:
+        self.db.execute("UPDATE capture_schedules SET last_run = ?, next_run = ?, last_status = ? WHERE id = ?",
+                        (run_at, next_run, status, sid))
+
+    def run_now(self, sid: int) -> None:
+        self.db.execute("UPDATE capture_schedules SET next_run = ? WHERE id = ?", (now(), sid))
+
+
 class Maintenance:
     """Housekeeping: delete history older than a cutoff. Never touches audit_log
     (append-only) or the authorized-targets / networks scope the user set up."""
@@ -254,6 +342,11 @@ class Maintenance:
         counts["wifi snapshots"] = cur.rowcount
         cur = self.db.execute("DELETE FROM host_audits WHERE started < ?", (cutoff,))
         counts["host audits"] = cur.rowcount
+        for r in self.db.query("SELECT pcap_path FROM captures WHERE started < ? AND owned = 1", (cutoff,)):
+            if r["pcap_path"]:
+                Path(r["pcap_path"]).unlink(missing_ok=True)
+        cur = self.db.execute("DELETE FROM captures WHERE started < ?", (cutoff,))
+        counts["traffic captures"] = cur.rowcount
         self.db.execute("DELETE FROM wifi_observations WHERE snapshot_id NOT IN (SELECT id FROM wifi_snapshots)")
         return {k: v for k, v in counts.items() if v}
 

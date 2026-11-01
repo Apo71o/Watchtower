@@ -106,6 +106,21 @@ TOOLS: list[Tool] = [
     Tool("nikto", "Nikto", "Web server scanner for the Web Audit tab (known files, outdated software, misconfig).",
          (OS.LINUX, OS.WINDOWS, OS.MACOS), ("nikto",), ("-Version",), apt_package="nikto",
          manual_url="https://github.com/sullo/nikto", optional=True),
+    Tool("tshark", "tshark (Wireshark CLI)", "Analyzes captured traffic for the Traffic Audit tab.",
+         (OS.LINUX, OS.WINDOWS, OS.MACOS), ("tshark",), ("--version",), apt_package="tshark",
+         winget_id="WiresharkFoundation.Wireshark", manual_url="https://www.wireshark.org/download.html",
+         optional=True),
+    Tool("dumpcap", "dumpcap (Wireshark capture engine)", "Records packets on your interface for Traffic Audit "
+         "(listen-only; Wi-Fi handshake frames are always filtered out).",
+         (OS.LINUX, OS.WINDOWS, OS.MACOS), ("dumpcap",), ("--version",), apt_package="tshark",
+         winget_id="WiresharkFoundation.Wireshark", manual_url="https://www.wireshark.org/download.html",
+         optional=True, needs_raw_sockets=True,
+         note="Capturing needs permission: the Dependency Check 'Grant capabilities' step covers dumpcap, or add "
+              "yourself to the 'wireshark' group (sudo dpkg-reconfigure wireshark-common, then log out and in)."),
+    Tool("wireshark", "Wireshark", "Optional: opens a saved capture for packet-by-packet inspection.",
+         (OS.LINUX, OS.WINDOWS, OS.MACOS), ("wireshark",), ("--version",), apt_package="wireshark",
+         winget_id="WiresharkFoundation.Wireshark", manual_url="https://www.wireshark.org/download.html",
+         optional=True),
     Tool("subfinder", "subfinder", "Passive subdomain discovery from public sources (CT logs, passive DNS) for a "
          "domain you own (Domain Audit). Never contacts the domain's servers.",
          (OS.LINUX, OS.WINDOWS, OS.MACOS), ("subfinder",), ("-version",),

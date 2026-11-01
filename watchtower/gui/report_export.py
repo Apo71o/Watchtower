@@ -32,7 +32,7 @@ from watchtower.storage.audit_log import Event
 def gather(ctx: AppContext, include_unauthorized_wifi: bool, include_info: bool, title: str,
            author: str, msf_index: dict | None = None) -> report.ReportInput:
     a = assess(ctx.scans.with_output(), ctx.networks.all(), include_unauthorized_wifi, ctx.audits.latest(), msf_index,
-               ctx.nvd.all() if ctx.nvd_enabled() else None)
+               ctx.nvd.all() if ctx.nvd_enabled() else None, captures=ctx.captures.latest_per_source())
     changes = {}
     for t in ctx.scans.targets():
         scans = ctx.scans.for_target(t["target"], limit=2)

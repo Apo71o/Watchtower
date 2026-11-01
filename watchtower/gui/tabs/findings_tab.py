@@ -187,6 +187,7 @@ class FindingsTab(QWidget):
         ctx.bus.scan_finished.connect(self.refresh)
         ctx.bus.networks_changed.connect(self.refresh)
         ctx.bus.audit_finished.connect(self.refresh)
+        ctx.bus.captures_changed.connect(self.refresh)
         ctx.bus.scan_finished.connect(lambda: self.nvd_lookup(manual=False))
         self._msf_index: dict | None = None
         self.refresh()
@@ -239,7 +240,8 @@ class FindingsTab(QWidget):
     def refresh(self):
         self.assessment = assess(self.ctx.scans.with_output(), self.ctx.networks.all(),
                                  self.include_unauth.isChecked(), self.ctx.audits.latest(), self._msf_index,
-                                 self.ctx.nvd.all() if self.ctx.nvd_enabled() else None)
+                                 self.ctx.nvd.all() if self.ctx.nvd_enabled() else None,
+                                 captures=self.ctx.captures.latest_per_source())
         self.nvd_btn.setVisible(self.ctx.nvd_enabled())
         a = self.assessment
         c = a.counts()

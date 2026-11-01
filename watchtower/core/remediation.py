@@ -104,9 +104,9 @@ def fixes_for(f: Finding, local: bool, ssh_available: bool = True, gateway: str 
     host = f.device
     if f.patched:
         return [FixAction("rescan", "Re-scan to verify", "Already fixed by a distribution update.")]
-    if f.kind in ("web", "email", "subdomain"):
-        # Web server config / DNS records: 'How to fix it' has the exact settings; re-run the audit in
-        # Web Audit / Domain Audit to verify. No one-click action applies.
+    if f.kind in ("web", "email", "subdomain", "traffic"):
+        # Web server config / DNS records / client settings seen in traffic: 'How to fix it' has the exact
+        # settings; re-run the audit (or capture again) to verify. No one-click action applies.
         return []
 
     pkg = packages_for(f.product) if f.kind in ("service", "nse", "exposure", "snmp", "tls") else None

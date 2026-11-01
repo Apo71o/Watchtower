@@ -1,0 +1,51 @@
+================================================================================
+IPv6 Conversations
+Filter:<No Filter>
+                                               |       <-      | |       ->      | |     Total     |    Relative    |   Duration   |
+                                               | Frames  Bytes | | Frames  Bytes | | Frames  Bytes |      Start     |              |
+================================================================================
+================================================================================
+IPv4 Conversations
+Filter:<No Filter>
+                                               |       <-      | |       ->      | |     Total     |    Relative    |   Duration   |
+                                               | Frames  Bytes | | Frames  Bytes | | Frames  Bytes |      Start     |              |
+127.0.0.5            <-> 127.0.0.1                 45 3545 bytes      65 4741 bytes     110 8286 bytes     0.000000000         4.0338
+127.0.0.1            <-> 127.0.0.1                  0 0 bytes        36 6548 bytes      36 6548 bytes     3.422228419         4.6514
+127.0.0.6            <-> 127.0.0.1                  7 647 bytes       9 782 bytes      16 1429 bytes     2.263309015         1.7701
+127.0.0.7            <-> 127.0.0.1                  6 652 bytes       8 775 bytes      14 1427 bytes     2.265650484         1.7681
+================================================================================
+
+===================================================================
+Protocol Hierarchy Statistics
+Filter: 
+
+eth                                      frames:176 bytes:17690
+  ip                                     frames:176 bytes:17690
+    tcp                                  frames:156 bytes:15406
+      ftp                                frames:7 bytes:540
+        ftp.current-working-directory    frames:7 bytes:540
+      telnet                             frames:5 bytes:382
+      pop                                frames:7 bytes:528
+      imap                               frames:5 bytes:405
+      smtp                               frames:11 bytes:841
+      http                               frames:4 bytes:549
+        tcp.segments                     frames:2 bytes:136
+        urlencoded-form                  frames:1 bytes:239
+      nbss                               frames:2 bytes:187
+        smb                              frames:1 bytes:117
+      tls                                frames:15 bytes:4990
+    udp                                  frames:10 bytes:1002
+      snmp                               frames:2 bytes:174
+      llmnr                              frames:2 bytes:134
+      mdns                               frames:1 bytes:75
+      dns                                frames:2 bytes:139
+      nbns                               frames:1 bytes:92
+      ssdp                               frames:2 bytes:388
+    icmp                                 frames:10 bytes:1282
+      snmp                               frames:2 bytes:230
+      llmnr                              frames:2 bytes:190
+      mdns                               frames:1 bytes:103
+      dns                                frames:2 bytes:195
+      nbns                               frames:1 bytes:120
+      ssdp                               frames:2 bytes:444
+===================================================================
