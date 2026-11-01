@@ -92,8 +92,14 @@ docs/SPEC.md             original build prompt (authoritative requirements)
 - The user's machine runs Ubuntu 26.04: wireless-tools (iwlist) is no longer packaged there.
   `deps.check_all()` asks `apt-cache policy` which packages exist and the installer skips the rest.
   Prefer iw/nmcli over iwlist in new code.
-- Scans are stored as raw nmap XML in `scans.raw_output`; steps 4 and 8 should parse from there
-  (`nmap_runner.parse_xml`) rather than adding a second results schema unless needed.
+- Scans are stored as raw nmap XML in `scans.raw_output`; findings are computed on demand from the
+  newest result per host (`findings_engine.latest_hosts`). Step 8 (history diff) can compare
+  consecutive scans of the same host the same way.
+- Findings aren't persisted; `assessment.assess()` recomputes them. Step 6 (default creds, TLS, SNMP)
+  should add its results as Finding objects into `assess()` and set Finding.weight (default-creds
+  hit: +15 per the spec) so risk scoring picks them up.
+- Dataset version matches are "probable" (distro backports); an NSE confirmation of the same
+  device|port|CVE merges into one "confirmed" finding.
 - Monitor-mode and airodump-ng paths are unit-tested against fixtures only; the cloud container
   has no Wi-Fi hardware. Verify on real hardware locally.
 
@@ -107,9 +113,11 @@ docs/SPEC.md             original build prompt (authoritative requirements)
         live output, cancel, XML parsing, results tree, scan history, --privileged / pkexec /
         Windows relaunch-as-admin. Profiles use nmap's own names (Zenmap's standard profiles) plus
         a Scan type picker with nmap's technique names (-sS, -sT, -sU, -sX, ...), each explained
-- [ ] 4. Findings engine with a small bundled dataset in `watchtower/data/`, remediation,
-        risk scoring, MITRE ATT&CK tags
-- [ ] 5. Wi-Fi advisor findings (open/WEP/WPA1/WPA2-PSK/WPS), advisory text only
+- [x] 4. Findings engine (core/findings_engine.py: data/vulns.json version matches, exposure RULES,
+        NSE "VULNERABLE" parsing), core/risk_scoring.py, core/attck_mapping.py, core/assessment.py
+        (shared by the Findings tab and the future report), Findings tab with Top Risks + details
+- [x] 5. Wi-Fi advisor (core/wep_wpa_advisor.py): open/OWE/WEP/WPA1-TKIP/WPA2-PSK/transition/
+        Enterprise/WPS/default SSID/hidden SSID, each with technique explanation + remediation
 - [ ] 6. Host Audit tab: default-creds fingerprint (report only), TLS audit, SNMP read-only
 - [ ] 7. Metasploit module cross-reference (module names only)
 - [ ] 8. History diff ("What Changed") + scheduler

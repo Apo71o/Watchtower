@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<nmaprun scanner="nmap" args="nmap -sV --script vuln -oX - 192.168.56.101" start="1762000000" startstr="Sat Nov  1 10:00:00 2026" version="7.95" xmloutputversion="1.05">
+<host starttime="1762000001" endtime="1762000100"><status state="up" reason="arp-response" reason_ttl="0"/>
+<address addr="192.168.56.101" addrtype="ipv4"/>
+<address addr="08:00:27:AA:BB:CC" addrtype="mac" vendor="Oracle VirtualBox virtual NIC"/>
+<hostnames><hostname name="labbox.lan" type="PTR"/></hostnames>
+<ports><extraports state="closed" count="992"><extrareasons reason="reset" count="992"/></extraports>
+<port protocol="tcp" portid="21"><state state="open" reason="syn-ack" reason_ttl="64"/><service name="ftp" product="vsftpd" version="2.3.4" ostype="Unix" method="probed" conf="10"><cpe>cpe:/a:vsftpd:vsftpd:2.3.4</cpe></service><script id="ftp-vsftpd-backdoor" output="&#xa;  VULNERABLE:&#xa;  vsFTPd version 2.3.4 backdoor&#xa;    State: VULNERABLE (Exploitable)&#xa;    IDs:  CVE:CVE-2011-2523  BID:48539&#xa;      vsFTPd version 2.3.4 backdoor, this was reported on 2011-07-04.&#xa;    Disclosure date: 2011-07-03"/></port>
+<port protocol="tcp" portid="22"><state state="open" reason="syn-ack" reason_ttl="64"/><service name="ssh" product="OpenSSH" version="8.9p1 Ubuntu 3ubuntu0.1" extrainfo="Ubuntu Linux; protocol 2.0" ostype="Linux" method="probed" conf="10"/></port>
+<port protocol="tcp" portid="23"><state state="open" reason="syn-ack" reason_ttl="64"/><service name="telnet" product="Linux telnetd" ostype="Linux" method="probed" conf="10"/></port>
+<port protocol="tcp" portid="80"><state state="open" reason="syn-ack" reason_ttl="64"/><service name="http" product="Apache httpd" version="2.4.49" extrainfo="(Unix)" method="probed" conf="10"/></port>
+<port protocol="tcp" portid="445"><state state="open" reason="syn-ack" reason_ttl="128"/><service name="microsoft-ds" product="Microsoft Windows 7 - 10 microsoft-ds" method="probed" conf="10"/></port>
+<port protocol="tcp" portid="2375"><state state="open" reason="syn-ack" reason_ttl="64"/><service name="docker" product="Docker" version="20.10.7" method="probed" conf="10"/></port>
+<port protocol="tcp" portid="3306"><state state="open" reason="syn-ack" reason_ttl="64"/><service name="mysql" product="MySQL" version="5.7.33" method="probed" conf="10"/></port>
+<port protocol="tcp" portid="8000"><state state="filtered" reason="no-response" reason_ttl="0"/><service name="http-alt" method="table" conf="3"/></port>
+</ports>
+<hostscript><script id="smb-vuln-ms17-010" output="&#xa;  VULNERABLE:&#xa;  Remote Code Execution vulnerability in Microsoft SMBv1 servers (ms17-010)&#xa;    State: VULNERABLE&#xa;    IDs:  CVE:CVE-2017-0143&#xa;    Risk factor: HIGH&#xa;      A critical remote code execution vulnerability exists in Microsoft SMBv1&#xa;       servers (ms17-010)."/><script id="smb-vuln-ms10-054" output="false"/></hostscript>
+</host>
+<runstats><finished time="1762000100" timestr="Sat Nov  1 10:01:40 2026" summary="Nmap done at Sat Nov  1 10:01:40 2026; 1 IP address (1 host up) scanned in 100.00 seconds" elapsed="100.00" exit="success"/><hosts up="1" down="0" total="1"/></runstats>
+</nmaprun>

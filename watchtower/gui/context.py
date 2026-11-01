@@ -23,6 +23,8 @@ class Bus(QObject):
     targets_changed = Signal()
     interfaces_changed = Signal(object)      # list[WirelessInterface]
     request_scan = Signal(str)               # open Scan a Target with this target filled in
+    scan_finished = Signal()                 # new nmap results stored
+    networks_changed = Signal()              # Wi-Fi observations or Authorized flags changed
     dependencies_changed = Signal()
 
 

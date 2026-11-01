@@ -17,7 +17,7 @@ CVE lookups, off by default.
 
 ## Status
 
-Build steps 1-3 of 11 are done:
+Build steps 1-5 of 11 are done:
 
 - Dependency check with a working one-click installer (live output, password prompt or terminal)
 - **Interfaces:** wireless adapters, monitor-mode support, switch monitor/managed mode
@@ -26,9 +26,12 @@ Build steps 1-3 of 11 are done:
 - **Scan a Target:** nmap's standard profiles (Intense scan, Quick scan plus, ...) and scan
   types (SYN, connect, UDP, Xmas, ...) with explanations, OS detection, vuln scripts and any extra
   options; authorized-target list; live output; results tree; scan history
+- **Findings:** CVE version matches, risky-service rules, nmap vuln-script results and Wi-Fi
+  advisor findings, each with remediation, MITRE ATT&CK tags and a plain explanation; per-device
+  0-100 risk score in a Top Risks view
 - Audit log viewer/export, command console, help panels, glossary
 
-Findings, Host Audit and What Changed are still placeholders (steps 4-8).
+Host Audit and What Changed are still placeholders (steps 6-8).
 
 ## Continuing development on your own machine
 

@@ -347,6 +347,7 @@ class ScanTab(QWidget):
     def _finished(self, result):
         code, xml = result
         self._done_common()
+        self.ctx.bus.scan_finished.emit()
         parsed = nr.parse_xml(xml)
         self.show_result(parsed)
         hosts_up = sum(1 for h in parsed.hosts if h.status == "up")

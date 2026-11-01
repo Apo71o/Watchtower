@@ -12,6 +12,7 @@ from watchtower.gui.context import AppContext
 from watchtower.gui.dependency_check import DependencyDialog
 from watchtower.gui.help_panel import TabPage
 from watchtower.gui.tabs.audit_log_tab import AuditLogTab
+from watchtower.gui.tabs.findings_tab import FindingsTab
 from watchtower.gui.tabs.help_tab import HelpTab
 from watchtower.gui.tabs.interfaces_tab import InterfacesTab
 from watchtower.gui.tabs.nearby_tab import NearbyTab
@@ -47,8 +48,9 @@ class MainWindow(QMainWindow):
         add("nearby", "Nearby Networks", self.nearby_tab, tooltip=wifi_reason, enabled=wifi_reason is None)
         self.scan_tab = ScanTab(ctx)
         add("scan", "Scan a Target", self.scan_tab)
-        add("findings", "Findings",
-            PlaceholderTab(ctx, "Findings", "steps 4, 5, 7", [], "Show findings"))
+        self.findings_tab = FindingsTab(ctx)
+        add("findings", "Findings", self.findings_tab)
+        self.pages["findings"].help.toggle.setChecked(False)   # the detail pane explains each finding
         add("host_audit", "Host Audit",
             PlaceholderTab(ctx, "Host Audit", "step 6", ["sslyze", "snmp"], "Audit host"))
         add("changes", "What Changed",

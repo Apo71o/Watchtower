@@ -263,6 +263,7 @@ class NearbyTab(QWidget):
         self.status.setText(f"Found {len(aps)} network(s)" + (f" and {len(stations)} client(s)" if stations else "")
                             + ". Tick Authorized for networks that are yours.")
         self.reload()
+        self.ctx.bus.networks_changed.emit()
 
     # ---- table ----
     def reload(self):
@@ -300,6 +301,7 @@ class NearbyTab(QWidget):
             return
         bssid = item.data(Qt.ItemDataRole.UserRole)
         self.ctx.networks.set_authorized(bssid, item.checkState() == Qt.CheckState.Checked)
+        self.ctx.bus.networks_changed.emit()
         self._selection_changed()
 
     def _selected(self) -> dict | None:
@@ -362,3 +364,4 @@ class NearbyTab(QWidget):
                 == QMessageBox.StandardButton.Yes:
             self.ctx.networks.forget_unauthorized()
             self.reload()
+            self.ctx.bus.networks_changed.emit()

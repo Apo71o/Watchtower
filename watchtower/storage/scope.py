@@ -124,6 +124,12 @@ class ScanStore:
             "SELECT id, tool, target, command, started, finished, exit_code FROM scans "
             "ORDER BY id DESC LIMIT ?", (limit,))]
 
+    def with_output(self, limit: int = 200) -> list[dict]:
+        """Newest-first scans including their raw output (for findings)."""
+        return [dict(r) for r in self.db.query(
+            "SELECT * FROM scans WHERE raw_output IS NOT NULL AND raw_output != '' ORDER BY id DESC LIMIT ?",
+            (limit,))]
+
     def get(self, scan_id: int) -> dict | None:
         rows = self.db.query("SELECT * FROM scans WHERE id = ?", (scan_id,))
         return dict(rows[0]) if rows else None

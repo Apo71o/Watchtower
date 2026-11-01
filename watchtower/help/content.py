@@ -74,16 +74,26 @@ specific bugs), so only use it on hosts you are allowed to stress.
 """,
 "findings": """
 ### Findings
-**What it does:** turns raw scan data into a prioritized list of problems.
-Each finding has a severity, a CVSS score where one applies, a MITRE ATT&CK
-technique tag, a per-device risk score (0-100) and, always, **remediation text**:
-what to change to fix it.
+**What it does:** turns stored scan results and your authorized Wi-Fi networks
+into a prioritized list of problems. Each finding has a severity, a CVSS score
+where one applies, MITRE ATT&CK technique tags and, always, **remediation text**:
+what to change to fix it. Select a finding to read the details; Wi-Fi findings
+also explain how the attack technique works.
 
-For Wi-Fi findings, the expanded row explains the attack technique in plain
-language so you understand the exposure. Watchtower never performs the attack.
-If you want to test one, do it by hand with the underlying tools, outside this app.
+**Where findings come from (all offline):**
+- **Version matches** against a small bundled set of well-known CVEs. Marked
+  *probable*: Linux distributions often patch without changing the version
+  number nmap sees. If nmap's own vuln script confirms the same CVE, the finding
+  is upgraded to *confirmed*.
+- **Exposure rules:** risky services being reachable at all (telnet, Docker API,
+  Redis, RDP, SNMP, plain FTP/HTTP, ...).
+- **nmap vuln scripts:** anything a `--script vuln` run reported as VULNERABLE.
+- **Wi-Fi advisor:** encryption type, WPS, default or hidden SSID.
 
-*Status: implemented in build steps 4, 5 and 7.*
+**Top risks** ranks each device 0-100: 6 × its worst CVSS score, plus
+weights for its findings (severity, or the Wi-Fi weakness), plus 1 per open
+port. Click a device to filter the list. Live NVD lookups (build step 11) will
+extend the CVE coverage.
 """,
 "host_audit": """
 ### Host Audit
@@ -172,6 +182,23 @@ GLOSSARY: list[tuple[str, str]] = [
  "4-way-handshake key exchange with SAE (Dragonfly), which resists offline guessing: each "
  "guess needs a live exchange with the AP. **Transition mode** (WPA2+WPA3 together) keeps "
  "WPA2's weakness for any client that uses it."),
+("TKIP vs CCMP (AES)",
+ "The ciphers WPA uses to encrypt data. **TKIP** was a 2003 patch that kept WEP's RC4 cipher so old hardware "
+ "could be upgraded by firmware. It has known weaknesses and is deprecated. **CCMP** uses AES and is what WPA2 "
+ "and WPA3 should use. A router in \"WPA/WPA2 mixed\" or \"TKIP+AES\" mode still offers TKIP."),
+("SAE (WPA3-Personal)",
+ "Simultaneous Authentication of Equals, also called Dragonfly: WPA3-Personal's password exchange. Each password "
+ "guess needs a live exchange with the access point, so recorded traffic can't be cracked offline, and it gives "
+ "forward secrecy (learning the password later doesn't decrypt old sessions)."),
+("OWE (Enhanced Open)",
+ "Opportunistic Wireless Encryption: encryption for networks without a password (cafés, guest Wi-Fi). Each "
+ "client gets its own key, which stops passive eavesdropping. It doesn't stop an impostor access point."),
+("802.1X / WPA-Enterprise",
+ "Instead of one shared passphrase, each user or device authenticates to a RADIUS server (with a password or "
+ "a certificate) and gets its own keys. Secure when clients verify the server's certificate."),
+("PMF (802.11w)",
+ "Protected Management Frames: cryptographically protects Wi-Fi management frames such as disconnect "
+ "messages, so they can't be forged to knock devices off the network. Mandatory in WPA3, optional in WPA2."),
 ("PSK (Pre-Shared Key)",
  "The shared passphrase in WPA/WPA2/WPA3-Personal. In WPA2 it is stretched with "
  "PBKDF2 (4096 rounds, with the SSID as salt) into the Pairwise Master Key. Because the "
@@ -203,6 +230,10 @@ GLOSSARY: list[tuple[str, str]] = [
  "An attacker-controlled access point imitating a legitimate SSID so clients connect to "
  "it. Watchtower does not create one; the term is here because \"What Changed\" can flag "
  "an unexpected new BSSID advertising your SSID, which is how you would spot one."),
+("Probable vs confirmed",
+ "A **probable** finding is a version match: nmap reported a version known to be vulnerable. Linux distributions "
+ "often backport security fixes without changing the version number (Ubuntu's OpenSSH 8.9p1 can be fully "
+ "patched), so check the package version. **Confirmed** means an nmap vuln script actively verified the issue."),
 ("CVE",
  "Common Vulnerabilities and Exposures: a public identifier (e.g. CVE-2011-2523) for a "
  "specific known flaw in a specific product and version range. Findings link service "

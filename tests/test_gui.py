@@ -130,3 +130,22 @@ def test_scan_tab_end_to_end(ctx):
         assert scan["exit_code"] == 0 and "<nmaprun" in ctx.scans.get(scan["id"])["raw_output"]
     finally:
         srv.terminate()
+
+
+def test_findings_tab(ctx):
+    from watchtower.gui.tabs.findings_tab import FindingsTab
+    sid = ctx.scans.start("nmap", "192.168.56.101", "nmap -sV --script vuln 192.168.56.101")
+    ctx.scans.finish(sid, 0, (FX / "nmap_lab.xml").read_text())
+    tab = FindingsTab(ctx)
+    assert tab.table.rowCount() > 5 and tab.risks.rowCount() == 1
+    assert tab.table.item(0, 0).text() == "Critical"
+    tab.table.selectRow(0)
+    md = tab.detail.toMarkdown()
+    assert "How to fix it" in md
+    tab.min_sev.setCurrentIndex(4)   # Critical only
+    assert all(tab.table.item(r, 0).text() == "Critical" for r in range(tab.table.rowCount()))
+    from watchtower.core import wifi_scan
+    ctx.networks.record(wifi_scan.parse_iw_scan((FX / "iw_scan.txt").read_text()), source="iw")
+    ctx.networks.set_authorized("AA:BB:CC:00:00:03", True)
+    ctx.bus.networks_changed.emit()
+    assert tab.risks.rowCount() == 2
