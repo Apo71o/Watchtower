@@ -36,7 +36,7 @@ from watchtower.core import password_strength as ps
 from watchtower.core import pwned_check as pw
 from watchtower.core import wordlist_builder as wl
 from watchtower.core.platform_utils import data_dir
-from watchtower.core.runner import format_command
+from watchtower.core.runner import CommandUnavailable, format_command
 from watchtower.gui.context import AppContext
 from watchtower.gui.ui import restore_tip, tip
 from watchtower.gui.worker import run_in_background
@@ -613,15 +613,6 @@ class HashRecoveryPanel(QWidget):
             wl.add_wordlist(self.ctx.settings, path)
             self.ctx.bus.wordlists_changed.emit()
 
-    def _extractor_hint(self, htype: hc.HashType) -> str | None:
-        """For document hash types, the one-off *2john command to produce the hash file."""
-        kind = htype.john_format if htype.john_format in hc.EXTRACTORS else None
-        if not kind:
-            return None
-        found = hc.find_extractor(kind)
-        extractor = found or f"{kind}2john"
-        return format_command([extractor, "<your-document>"]) + " > hash.txt"
-
     def _make_job(self):
         """Build the CrackJob from the current inputs. Returns (job, error_str)."""
         workdir = str(data_dir() / "hash_recovery")
@@ -649,14 +640,13 @@ class HashRecoveryPanel(QWidget):
         crack_cmd = format_command(job.argv)
         show_cmd = format_command(hc.show_argv(job))
         lines: list[str] = []
-        extractor = self._extractor_hint(htype)
-        if extractor:
-            lines += ["# Step 1 — extract the hash from the document (run against the document itself):",
-                      extractor, "",
-                      "# Step 2 — run the dictionary recovery against that hash file:"]
+        if job.extract_argv:
+            lines += [f"# Step 1 — extract the hash from {job.document}:",
+                      format_command(job.extract_argv) + "  > " + job.hash_file, "",
+                      "# Step 2 — recover the password from that hash:"]
         else:
-            lines.append("# Run the dictionary recovery:")
-        lines += [crack_cmd, "", "# Afterwards, list any passwords that were recovered:", show_cmd]
+            lines.append("# Recover the password:")
+        lines += [crack_cmd, "", "# Afterwards, list any recovered passwords:", show_cmd]
         self.output.setPlainText("\n".join(lines))
         self.copy_btn.setEnabled(True)
 
@@ -679,13 +669,14 @@ class HashRecoveryPanel(QWidget):
             self.output.setPlainText(f"# Could not build the command:\n# {err}")
             return
         command = format_command(job.argv)
+        extra = (f"\nFirst it extracts the hash from the document with:\n    {format_command(job.extract_argv)}\n"
+                 if job.extract_argv else "")
         confirm = QMessageBox.warning(
             self, "Run password recovery?",
             "This runs a password-cracking tool against:\n\n"
-            f"    {job.hash_file}\n\n"
+            f"    {job.document or job.hash_file}\n\n"
             "Only do this for hashes or files you own or are authorized to recover. It can use heavy CPU/GPU "
-            "and may run for a long time — you can Cancel. The command is:\n\n"
-            f"    {command}",
+            f"and may run for a long time — you can Cancel.{extra}\nThe recovery command is:\n\n    {command}",
             QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No, QMessageBox.StandardButton.No)
         if confirm != QMessageBox.StandardButton.Yes:
             self.ctx.audit.append(Event.DECLINED, command=command, target=job.hash_file or None,
@@ -693,7 +684,7 @@ class HashRecoveryPanel(QWidget):
             return
 
         self._run_job = job
-        self.ctx.audit.append(Event.CONFIRMATION, command=command, target=job.hash_file or None,
+        self.ctx.audit.append(Event.CONFIRMATION, command=command, target=(job.document or job.hash_file) or None,
                               detail={"purpose": "hash recovery (in-app run authorized)",
                                       "tool": job.tool, "hash_type": job.hash_type.label})
         self._running = True
@@ -701,13 +692,39 @@ class HashRecoveryPanel(QWidget):
         self.cancel_btn.setEnabled(True)
         self.copy_btn.setEnabled(False)
         self._update_enabled()
-        self.output.setPlainText("$ " + command + "\n")
+        self.output.clear()
+        cancel = self.cancel_event
 
         def work():
-            return self.ctx.runner.stream(job.argv, purpose="hash recovery", target=job.hash_file,
-                                          on_line=self._lines.line.emit, cancel=self.cancel_event)
+            if job.extract_argv:
+                self._lines.line.emit("$ " + format_command(job.extract_argv) + "  > " + job.hash_file)
+                ext = self.ctx.runner.run(job.extract_argv, purpose="extract document hash", target=job.document)
+                if ext.exit_code != 0 or not ext.stdout.strip():
+                    first = (ext.stdout or "no output").strip().splitlines()[0:1]
+                    raise RuntimeError("could not extract a hash from the document"
+                                       + (f" ({first[0][:160]})" if first else ""))
+                Path(job.hash_file).write_text(ext.stdout, encoding="utf-8")
+                self._lines.line.emit(f"# extracted hash -> {job.hash_file}")
+            self._lines.line.emit("$ " + format_command(job.argv) + "\n")
+            result = self.ctx.runner.stream(job.argv, purpose="hash recovery", target=job.hash_file,
+                                             on_line=self._lines.line.emit, cancel=cancel)
+            return self._recovered(job, result)
 
         run_in_background(work, on_done=self._run_done, on_error=self._run_error)
+
+    def _recovered(self, job, result):
+        """(hash, plaintext) pairs after a run. hashcat: from the potfile; John: via --show
+        (its default pot), falling back to parsing the run output."""
+        if job.tool == "hashcat":
+            return hc.read_cracked(job)
+        try:
+            shown = self.ctx.runner.run(hc.show_argv(job), purpose="list recovered passwords", target=job.hash_file)
+            found = hc.parse_cracked("john", shown.stdout)
+            if found:
+                return found
+        except CommandUnavailable:
+            pass
+        return hc.parse_cracked("john", result.stdout)
 
     def _cancel(self):
         if self.cancel_event:
@@ -721,8 +738,7 @@ class HashRecoveryPanel(QWidget):
         self.copy_btn.setEnabled(self._run_job is not None)
         self._update_enabled()
 
-    def _run_done(self, result):
-        recovered = hc.read_cracked(self._run_job) if self._run_job else []
+    def _run_done(self, recovered):
         self._reset_after_run()
         self._lines.line.emit("")
         if recovered:

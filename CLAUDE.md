@@ -252,6 +252,19 @@ Same rules: authorized/own targets only, ownership gate for new target types, ev
       logged). Gated on the ownership checkbox + tool availability (shared _make_job() with _generate()).
       +1 GUI test (real hashcat crack: decline logs nothing-run; accept logs command_start/end +
       confirmation, shows the password, and keeps it out of the audit log).
+      - 2026-11-01 fixes after a user report (core `john` on Ubuntu crashed on `--pot=`): build_john no
+        longer passes `--pot=` (Ubuntu's `john` is the non-jumbo "core" build, which rejects it and also
+        lacks the Raw-*/document formats); John results are read back with `john --show` (default pot),
+        hashcat still via its potfile. Document types (ZIP/RAR/7z/Office/PDF) are now a TWO-STEP job:
+        build() treats the hash-file input as the DOCUMENT, runs the matching `*2john` extractor (its
+        stdout -> workdir/<stem>.<kind>.hash) via CommandRunner, then recovers with John in AUTO-DETECT
+        mode (no --format, since zip2john may emit $zip2$ or $pkzip2$). If the `*2john` extractor is
+        missing (e.g. core john), build() raises a clear CrackError naming the tool and the jumbo build
+        instead of emitting a broken command. CrackJob gained extract_argv/document/autodetect. The Run
+        path runs extract->recover->(--show) all on the worker thread. Document cracking could NOT be
+        e2e-tested here (no zip2john/jumbo in the container); arg construction + the missing-extractor
+        error are unit-tested, raw hashcat run is tested for real. VERIFY the ZIP flow locally with
+        John jumbo installed.
 - [x] P2-1b Wordlists panel (user request 2026-11-01): fourth sub-panel "Wordlists" in password_tab.py
       (WordlistPanel) + core/wordlist_builder.py (Qt-free). Four sections: (1) build a targeted list from
       base words with bounded mutations — case/leet/append digits+years+symbols/combine pairs, hard

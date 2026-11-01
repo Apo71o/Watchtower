@@ -480,28 +480,34 @@ def test_hash_recovery_panel_generates_but_never_runs(ctx, tmp_path):
     assert "hashcat" in QApplication.clipboard().text()
 
 
-def test_hash_recovery_panel_document_type_shows_extractor(ctx, tmp_path):
+def test_hash_recovery_document_type_extract_then_recover(ctx, tmp_path, monkeypatch):
     from watchtower.core import hash_cracker as hc
     from watchtower.gui.tabs.password_tab import HashRecoveryPanel
-    if not hc.available_tools():
-        pytest.skip("no recovery tool installed")
-    hash_file = tmp_path / "zip.hash"
-    hash_file.write_text("$zip2$*0*...*$/zip2$\n")
+    doc = tmp_path / "secret.zip"
+    doc.write_bytes(b"PK\x03\x04fake")
     wordlist = tmp_path / "w.txt"
     wordlist.write_text("secret\n")
     panel = HashRecoveryPanel(ctx)
-    # select the ZIP type and John (hashcat has no ZIP mode)
-    idx = [panel.type_combo.itemData(i).label for i in range(panel.type_combo.count())].index("ZIP (PKZIP/WinZip)")
-    panel.type_combo.setCurrentIndex(idx)
-    if "john" in hc.available_tools():
-        _select_tool(panel, "john")
-    panel.hash_input.setText(str(hash_file))
+    zip_idx = [panel.type_combo.itemData(i).label
+               for i in range(panel.type_combo.count())].index("ZIP (PKZIP/WinZip)")
+    panel.type_combo.setCurrentIndex(zip_idx)
+    panel.hash_input.setText(str(doc))
     panel.word_input.setText(str(wordlist))
     panel.own_box.setChecked(True)
+
+    # no zip2john installed -> a clear, actionable message (names zip2john and the jumbo build)
+    monkeypatch.setattr(hc, "find_extractor", lambda kind: None)
     panel._generate()
     out = panel.output.toPlainText()
-    if "john" in hc.available_tools():
-        assert "zip2john" in out and "Step 1" in out   # one-off extractor command is shown first
+    assert "zip2john" in out and "jumbo" in out
+
+    # with zip2john + john present -> Show shows the two-step: extract, then recover (auto-detect, no --pot)
+    monkeypatch.setattr(hc, "find_extractor", lambda kind: "/usr/bin/zip2john")
+    monkeypatch.setattr(hc.deps, "find_binary", lambda n: "/usr/sbin/john" if n == "john" else None)
+    panel._generate()
+    out = panel.output.toPlainText()
+    assert "Step 1" in out and "zip2john" in out and "secret.zip.hash" in out
+    assert "--pot" not in out and "--format" not in out
 
 
 def test_hash_recovery_run_executes_logs_and_shows_password(ctx, tmp_path, monkeypatch):

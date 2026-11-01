@@ -254,3 +254,30 @@ def test_wordlist_registry(tmp_path):
     p.unlink()
     assert not any(path == str(p) for _, path in wl.known_wordlists(settings))
     assert str(p) not in wl.registered_paths(settings)
+
+
+def test_hash_cracker_john_no_pot_and_document_extraction(tmp_path, monkeypatch):
+    """Core john rejects --pot, so build_john/show_argv must not emit it; document types
+    require a *2john extractor and run as a two-step (extract -> recover, John auto-detect)."""
+    wl = tmp_path / "w.txt"
+    wl.write_text("x\n")
+    hf = tmp_path / "h.txt"
+    hf.write_text("5f4dcc3b5aa765d61d8327deb882cf99\n")
+    md5 = next(t for t in hc.HASH_TYPES if t.label == "MD5")
+    j = hc.build_john(str(hf), md5, str(wl), str(tmp_path))
+    assert not any(a.startswith("--pot") for a in j.argv)
+    assert not any(a.startswith("--pot") for a in hc.show_argv(j))
+
+    doc = tmp_path / "a.zip"
+    doc.write_bytes(b"PK\x03\x04")
+    zt = next(t for t in hc.HASH_TYPES if t.label.startswith("ZIP"))
+    monkeypatch.setattr(hc, "find_extractor", lambda kind: None)
+    with pytest.raises(hc.CrackError, match="zip2john"):
+        hc.build("john", str(doc), zt, str(wl), str(tmp_path))
+
+    monkeypatch.setattr(hc, "find_extractor", lambda kind: "/usr/bin/zip2john")
+    monkeypatch.setattr(hc.deps, "find_binary", lambda n: "/usr/sbin/john" if n == "john" else None)
+    job = hc.build("john", str(doc), zt, str(wl), str(tmp_path))
+    assert job.extract_argv == ["/usr/bin/zip2john", str(doc)]
+    assert job.autodetect and job.document == str(doc) and job.hash_file.endswith(".zip.hash")
+    assert not any(a.startswith("--format") for a in job.argv)   # auto-detect

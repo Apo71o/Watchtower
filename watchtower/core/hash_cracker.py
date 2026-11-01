@@ -101,12 +101,15 @@ class CrackJob:
     out_file: str = ""
     pot_file: str = ""
     workdir: str = ""
+    extract_argv: list[str] | None = None   # *2john step (its stdout -> hash_file) for document types
+    document: str = ""                       # the original document, for display
+    autodetect: bool = False                 # let John auto-detect the format (no --format)
 
 
 def build_hashcat(hash_file: str, htype: HashType, wordlist: str, workdir: str,
                   rules: str | None = None) -> CrackJob:
     if htype.hashcat_mode is None:
-        raise CrackError(f"hashcat has no mode configured for {htype.label}; use John instead.")
+        raise CrackError(f"hashcat has no mode for {htype.label}; use John the Ripper for this type.")
     hashcat = deps.find_binary("hashcat")
     if not hashcat:
         raise CrackError("hashcat is not installed.")
@@ -121,21 +124,52 @@ def build_hashcat(hash_file: str, htype: HashType, wordlist: str, workdir: str,
 
 
 def build_john(hash_file: str, htype: HashType, wordlist: str, workdir: str,
-               rules: str | None = None) -> CrackJob:
+               rules: str | None = None, autodetect: bool = False) -> CrackJob:
     if not htype.john_format:
         raise CrackError(f"No John format configured for {htype.label}.")
     john = deps.find_binary("john")
     if not john:
         raise CrackError("John the Ripper is not installed.")
-    pot_file = str(Path(workdir) / "watchtower.pot")
-    argv = [john, f"--format={htype.john_format}", f"--wordlist={wordlist}", f"--pot={pot_file}", hash_file]
+    # No --pot: John's "core" build (Ubuntu's `john` package) rejects it; both core and
+    # jumbo use the default pot, which `john --show` reads back. For document hashes let
+    # John auto-detect the exact format (zip2john may emit $zip2$ or $pkzip2$).
+    argv = [john, f"--wordlist={wordlist}", hash_file]
+    if not autodetect:
+        argv.insert(1, f"--format={htype.john_format}")
     if rules:
         argv.append("--rules" if rules in ("", "default") else f"--rules={rules}")
-    return CrackJob("john", argv, hash_file, htype, "", pot_file, workdir)
+    return CrackJob("john", argv, hash_file, htype, "", "", workdir, autodetect=autodetect)
+
+
+def _document_kind(htype: HashType) -> str | None:
+    return htype.john_format if htype.john_format in EXTRACTORS else None
 
 
 def build(tool: str, hash_file: str, htype: HashType, wordlist: str, workdir: str,
           rules: str | None = None) -> CrackJob:
+    kind = _document_kind(htype)
+    if kind:
+        # `hash_file` is the DOCUMENT; its hash must be extracted with *2john first, then
+        # recovered with John (which auto-detects the format). Document hashes need the
+        # John "jumbo" build (it ships the *2john tools); hashcat modes are ambiguous here.
+        if not Path(hash_file).is_file():
+            raise CrackError(f"File not found: {hash_file}")
+        if not Path(wordlist).is_file():
+            raise CrackError(f"Wordlist not found: {wordlist}")
+        extractor = find_extractor(kind)
+        if not extractor:
+            raise CrackError(
+                f"{htype.label} needs the '{kind}2john' extractor, which ships with John the Ripper's "
+                "'jumbo' build. It wasn't found — your `john` may be the limited 'core' build. Install the "
+                "jumbo build (it provides the *2john tools and the document formats), then try again.")
+        if not deps.find_binary("john"):
+            raise CrackError("John the Ripper (jumbo) is required for document types but was not found.")
+        produced = str(Path(workdir) / (Path(hash_file).stem + f".{kind}.hash"))
+        job = build_john(produced, htype, wordlist, workdir, rules, autodetect=True)
+        job.extract_argv = extractor_argv(kind, hash_file)
+        job.document = hash_file
+        return job
+
     if not Path(hash_file).is_file():
         raise CrackError(f"Hash file not found: {hash_file}")
     if not Path(wordlist).is_file():
@@ -148,8 +182,10 @@ def show_argv(job: CrackJob) -> list[str]:
     if job.tool == "hashcat":
         return [deps.find_binary("hashcat"), "-m", str(job.hash_type.hashcat_mode), "--potfile-path", job.pot_file,
                 "--show", "--outfile-format", "1,2", job.hash_file]
-    return [deps.find_binary("john"), f"--format={job.hash_type.john_format}", f"--pot={job.pot_file}", "--show",
-            job.hash_file]
+    argv = [deps.find_binary("john"), "--show", job.hash_file]
+    if not job.autodetect:
+        argv.insert(1, f"--format={job.hash_type.john_format}")
+    return argv
 
 
 def read_cracked(job: CrackJob) -> list[tuple[str, str]]:
