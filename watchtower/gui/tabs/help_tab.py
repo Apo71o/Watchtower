@@ -16,6 +16,8 @@ WHERE_TO_START = [
      '**Findings**: everything found, worst first, with a risk score per device and how to fix each item'),
     ("Check my Wi-Fi's security (and spot look-alike networks)",
      '**Nearby Networks**: scan, then tick **Authorized** for your own networks'),
+    ('See every device on my network and what each one is doing',
+     '**Traffic Audit**: capture or open a .pcap, then the **Devices** tab: one rundown per IP address'),
     ('Find passwords sent unencrypted, risky Windows lookups, old protocols',
      '**Traffic Audit**: capture for a minute while you use your devices, or open a .pcap'),
     ('Check a router/NAS admin page or my website',

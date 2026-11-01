@@ -19,5 +19,6 @@ def test_every_tab_has_help():
                 "PSK (Pre-Shared Key)", "CVSS", "CVE", "SNMP community string", "TLS cipher suite",
                 "MITRE ATT&CK", "Risk score", "SPF / DKIM / DMARC", "Certificate Transparency (CT)",
                 "Security headers (HSTS, CSP, X-Frame-Options)", "Cookie flags (Secure, HttpOnly, SameSite)",
-                "Packet capture (pcap)", "Capture filter (BPF)", "LLMNR / NBT-NS", "SMBv1", "UPnP / SSDP"}
+                "Packet capture (pcap)", "Capture filter (BPF)", "LLMNR / NBT-NS", "SMBv1", "UPnP / SSDP",
+                "MAC address / maker (OUI)", "TLS server name (SNI)", "DHCP"}
     assert required <= {t for t, _ in GLOSSARY}

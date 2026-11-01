@@ -139,6 +139,27 @@ def render_html(r: ReportInput, now: datetime | None = None) -> str:
                                                       if risk else "") + "</h3>")
         out += [_finding_html(f) for f in fs]
 
+    # devices seen in traffic captures
+    for cap in a.captures:
+        from watchtower.core import traffic_audit, traffic_hosts
+        st = traffic_audit.stats_from_json(cap.get("stats_json"))
+        hosts = [h for h in traffic_hosts.rundown(st, traffic_audit.events_from_json(cap.get("events_json")))
+                 if h.local]
+        if not hosts:
+            continue
+        src = cap["source"].partition(":")[2].rsplit("/", 1)[-1]
+        out.append(f"<h2>Devices seen in network traffic ({_e(src)})</h2><p>From a {st.packets}-packet capture of "
+                   f"{round(st.seconds or 0)} seconds. Names come from DHCP, mDNS and nmap; the maker from the MAC "
+                   "address.</p><table><tr><th>Device</th><th>Maker</th><th>Sent</th><th>Received</th>"
+                   "<th>Most-used sites / names</th><th>Problems</th></tr>")
+        for h in hosts:
+            top = ", ".join(n for n, _ in traffic_hosts._top(h.sites or h.dns, 4))
+            probs = ", ".join(f"{f.severity}: {f.title.removeprefix('Traffic: ')}" for f in h.findings[:3])
+            out.append(f"<tr><td>{_e(h.title)}</td><td>{_e(h.vendor)}</td><td>{_e(traffic_hosts.size(h.bytes_sent))}"
+                       f"</td><td>{_e(traffic_hosts.size(h.bytes_received))}</td><td>{_e(top)}</td>"
+                       f"<td>{_e(probs or 'none')}</td></tr>")
+        out.append("</table>")
+
     # changes
     if r.changes:
         out.append("<h2>Recent changes</h2><p>Differences between the two most recent scans of each target.</p>")
@@ -153,7 +174,9 @@ def render_html(r: ReportInput, now: datetime | None = None) -> str:
 
     # methodology
     out.append("<h2>Methodology</h2><p>Data was collected with standard tools (nmap, testssl.sh/SSLyze, net-snmp, "
-               "iw/nmcli/airodump-ng). Version-based CVE matches are marked <em>probable</em> unless confirmed by an "
+               "iw/nmcli/airodump-ng, dumpcap/tshark, nikto). Traffic captures were analyzed for metadata only "
+               "(addresses, names, ports, volumes); passwords and URL query strings are never recorded. "
+               "Version-based CVE matches are marked <em>probable</em> unless confirmed by an "
                "nmap script; Ubuntu/Debian backported fixes are checked against the package revision in the "
                "banner. Default-credential results are fingerprint matches; no logins were attempted. Risk = 6 × "
                "worst CVSS + finding weights (max 70) + 1 per open port (max 15), capped at 100.</p>")

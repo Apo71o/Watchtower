@@ -132,7 +132,9 @@ def run_capture_schedule(sched: dict, runner: CommandRunner, captures, capture_s
         err = traffic_audit.capture_error(r.stderr, r.exit_code)
         captures.finish(cid, r.exit_code, 0, 0, "{}", "[]", err)
         return finish(f"failed: {err}")
-    a = traffic_audit.analyze_pcap(runner, out, target=iface)
+    from watchtower.core import traffic_hosts
+    a = traffic_audit.analyze_pcap(runner, out, target=iface,
+                                   local_nets=traffic_hosts.interface_networks(runner, iface))
     captures.finish(cid, 0, a.stats.packets, a.stats.seconds, traffic_audit.stats_to_json(a.stats),
                     traffic_audit.events_to_json(a.events), a.error)
     if a.error:

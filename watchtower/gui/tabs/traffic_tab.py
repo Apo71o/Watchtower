@@ -15,6 +15,7 @@ from pathlib import Path
 from PySide6.QtCore import QObject, Qt, QTimer, QUrl, Signal
 from PySide6.QtGui import QDesktopServices, QFont
 from PySide6.QtWidgets import (
+    QCheckBox,
     QComboBox,
     QFileDialog,
     QFormLayout,
@@ -42,9 +43,11 @@ from PySide6.QtWidgets import (
 
 from watchtower.core import deps, scheduler
 from watchtower.core import traffic_audit as ta
+from watchtower.core import traffic_hosts as th
 from watchtower.core.findings_engine import SEV_RANK, latest_hosts
 from watchtower.core.runner import format_command
 from watchtower.gui.context import AppContext
+from watchtower.gui.ui import restore_tip, tip
 from watchtower.gui.worker import run_in_background
 
 SEV_ICON = {"Critical": "🔴", "High": "🔴", "Medium": "🟠", "Low": "🟡", "Info": "🔵"}
@@ -54,8 +57,20 @@ OPEN_TIP = ("Analyze a capture made earlier with Wireshark, tcpdump, your router
             "Watchtower. The file isn't changed or copied.")
 
 
+class _Signals(QObject):
+    done = Signal()
+
+    def emit(self):
+        self.done.emit()
+
+
 class _Lines(QObject):
     line = Signal(str)
+
+
+DISCOVER_TIP = ("After the capture, run a quick nmap ping scan (nmap -sn) of the interface's network, so devices "
+                "that stayed quiet while Watchtower listened also appear under Devices. This sends packets, so it "
+                "only works when that network is in your authorized targets.")
 
 
 def _label(text: str, tip: str = "") -> QLabel:
@@ -72,8 +87,10 @@ class TrafficTab(QWidget):
         self.ctx = ctx
         self.cancel_event: threading.Event | None = None
         self._lines = _Lines()
+        self._ping_done = _Signals()          # ping scan stored -> refresh Findings, Scan history
         self._deadline = 0.0
         self._monitor: set[str] = set()
+        self._nets: dict[str, list[str]] = {}       # interface -> its networks (for the device view / ping scan)
 
         intro = _label("Listen to the traffic on your network (or open a saved capture) and find passwords sent "
                        "without encryption, risky Windows name lookups, old protocols and more. Listening sends "
@@ -100,6 +117,8 @@ class TrafficTab(QWidget):
         self.filter.setToolTip("A capture filter (BPF syntax, same as tcpdump/Wireshark capture filters) to record "
                                "only some traffic. Leave empty to record everything. Watchtower always adds "
                                "'not ether proto 0x888e' so Wi-Fi handshakes are never recorded.")
+        self.discover = QCheckBox("Also find quiet devices (quick ping scan of my network afterwards)")
+        tip(self.discover, DISCOVER_TIP)
         self.start_btn = QPushButton("Start capture")
         self.start_btn.setToolTip("Start listening on the chosen interface for the chosen time, then analyze it.")
         self.perm = _label("")
@@ -114,6 +133,7 @@ class TrafficTab(QWidget):
         lf.addRow("Listen for:", self.duration)
         lf.addRow("Stop after:", self.max_packets)
         lf.addRow("Only record:", self.filter)
+        lf.addRow(self.discover)
         prow = QHBoxLayout()
         prow.addWidget(self.perm, 1)
         prow.addWidget(self.perm_btn)
@@ -218,12 +238,16 @@ class TrafficTab(QWidget):
         self.output.setFont(QFont("monospace"))
         self.output.setMaximumBlockCount(5000)
         self.tabs = QTabWidget()
+        self.devices = DevicesView(ctx)
         self.tabs.addTab(self.findings_view, "What was found")
+        self.tabs.addTab(self.devices, "Devices")
         self.tabs.addTab(self.overview, "Traffic overview")
         self.tabs.addTab(self.output, "Live output")
         self.tabs.setTabToolTip(0, "Problems found in the capture, in plain language, with how to fix each one.")
-        self.tabs.setTabToolTip(1, "Who talked to whom and which protocols were used.")
-        self.tabs.setTabToolTip(2, "The exact commands Watchtower ran and their messages.")
+        self.tabs.setTabToolTip(1, "Every address in the capture: who it is, what it talked to, which names and "
+                                   "sites it asked for, and its problems.")
+        self.tabs.setTabToolTip(2, "Who talked to whom and which protocols were used.")
+        self.tabs.setTabToolTip(3, "The exact commands Watchtower ran and their messages.")
 
         split = QSplitter()
         split.addWidget(left)
@@ -265,6 +289,7 @@ class TrafficTab(QWidget):
         self.sched_table.itemChanged.connect(self._sched_item_changed)
         self.sched_table.itemSelectionChanged.connect(self._gate)
         self._lines.line.connect(self.output.appendPlainText)
+        self._ping_done.done.connect(ctx.bus.scan_finished.emit)
         ctx.bus.captures_changed.connect(self.reload)
         ctx.bus.scan_finished.connect(self.render)          # host names for addresses
         ctx.bus.dependencies_changed.connect(self._gate)
@@ -298,7 +323,17 @@ class TrafficTab(QWidget):
             self.iface.addItem(f"{n}  ({desc})" if desc else n, n)
         idx = self.iface.findData(cur) if cur else -1
         self.iface.setCurrentIndex(max(idx, 0))
+        self._nets = {}
+        try:
+            from watchtower.core import interfaces
+            addrs = interfaces.local_addresses(self.ctx.runner)
+            self._nets = {n: [interfaces.network_of(c) for c in cs] for n, cs in addrs.items()}
+        except Exception:  # noqa: BLE001 - not Linux / no `ip`: no network info, discovery stays off
+            pass
         self._gate()
+
+    def iface_nets(self, iface: str | None) -> list[str]:
+        return [n for n in self._nets.get(iface or "", []) if not n.startswith(("127.", "fe80:", "::1"))]
 
     def _interfaces_changed(self, wireless):
         self._monitor = {w.name for w in wireless if getattr(w, "in_monitor_mode", False)}
@@ -331,6 +366,13 @@ class TrafficTab(QWidget):
         self.reanalyze_btn.setEnabled(has_file and have_tshark and not busy)
         self.delete_btn.setEnabled(bool(row) and not busy)
         self.add_sched_btn.setEnabled(bool(iface) and have_dumpcap)
+        nets, why = th.ping_scan_networks(self.iface_nets(iface), self.ctx.targets.values())
+        if not deps.find_binary("nmap"):
+            nets, why = [], "nmap isn't installed (sudo apt install nmap)."
+        self.discover.setEnabled(bool(nets) and not busy)
+        if not nets:
+            self.discover.setChecked(False)
+        restore_tip(self.discover, "" if nets else why)
         sel = self._selected_schedule() is not None
         self.sched_rm_btn.setEnabled(sel)
         self.sched_run_btn.setEnabled(sel and not busy)
@@ -397,6 +439,9 @@ class TrafficTab(QWidget):
             QMessageBox.warning(self, "Can't capture", str(exc))
             return
         cid = self.ctx.captures.start(f"interface:{iface}", out, True, format_command(argv))
+        nets = self.iface_nets(iface)
+        ping_nets = (th.ping_scan_networks(nets, self.ctx.targets.values())[0]
+                     if self.discover.isChecked() and self.discover.isEnabled() else [])
         self._begin(f"Listening on {iface} for {self.duration.currentText()}… (Stop ends it early)", seconds)
         cancel = self.cancel_event
 
@@ -415,7 +460,14 @@ class TrafficTab(QWidget):
                 os.chmod(out, 0o600)
             except OSError:
                 pass
-            return self._analyze(cid, out, iface)
+            n = self._analyze(cid, out, iface, nets)
+            for net in ping_nets:       # opt-in: find devices that stayed silent while we listened
+                self._lines.line.emit(f"Ping scan of {net} to find quiet devices…")
+                _sid, msg = th.ping_scan(self.ctx.runner, self.ctx.scans, self.ctx.targets.values(), net)
+                self._lines.line.emit(msg)
+            if ping_nets:
+                self._ping_done.emit()
+            return n
 
         run_in_background(work, on_done=lambda n: self._end(self._done_text(n), cid),
                           on_error=lambda m: self._end("Capture failed: " + m.split("\n\n")[0], cid))
@@ -443,14 +495,15 @@ class TrafficTab(QWidget):
             return
         cid, pcap = row["id"], row["pcap_path"]
         target = row["source"].split(":", 1)[1] if row["source"].startswith("interface:") else None
+        nets = ta.stats_from_json(row.get("stats_json")).local_nets or (self.iface_nets(target) if target else [])
         self._begin(f"Analyzing {Path(pcap).name} again…")
-        run_in_background(lambda: self._analyze(cid, pcap, target),
+        run_in_background(lambda: self._analyze(cid, pcap, target, nets),
                           on_done=lambda n: self._end(self._done_text(n), cid),
                           on_error=lambda m: self._end("Analysis failed: " + m.split("\n\n")[0], cid))
 
-    def _analyze(self, cid: int, pcap: str, target: str | None) -> int:
+    def _analyze(self, cid: int, pcap: str, target: str | None, local_nets: list[str] | None = None) -> int:
         self._lines.line.emit("Analyzing with tshark…")
-        a = ta.analyze_pcap(self.ctx.runner, pcap, target)
+        a = ta.analyze_pcap(self.ctx.runner, pcap, target, local_nets)
         self.ctx.captures.finish(cid, 0 if not a.error else 1, a.stats.packets, a.stats.seconds,
                                  ta.stats_to_json(a.stats), ta.events_to_json(a.events), a.error)
         if a.error:
@@ -502,9 +555,11 @@ class TrafficTab(QWidget):
         if not row:
             self.findings_view.setMarkdown(EMPTY_HELP)
             self.overview.setMarkdown("")
+            self.devices.show_capture(None)
             self._gate()
             return
         labels = {a: h.label for a, (h, _s) in latest_hosts(self.ctx.scans.with_output()).items()}
+        self.devices.show_capture(row)
         self.findings_view.setMarkdown(findings_markdown(row, labels))
         self.overview.setMarkdown(overview_markdown(row, labels))
         self._gate()
@@ -698,3 +753,165 @@ PROTO_NAMES = {"ip": "IPv4", "ipv6": "IPv6", "tcp": "TCP", "udp": "UDP", "tls": 
                "ssdp": "SSDP (UPnP discovery)", "snmp": "SNMP (device management)", "pop": "POP3 (mail)",
                "imap": "IMAP (mail)", "smtp": "SMTP (mail)", "icmp": "ICMP (ping, errors)", "arp": "ARP",
                "quic": "QUIC (encrypted web)", "ssh": "SSH (encrypted remote login)", "dhcp": "DHCP"}
+
+
+class _SortItem(QTableWidgetItem):
+    """Table cell that shows text but sorts by a number."""
+
+    def __init__(self, text: str, key):
+        super().__init__(text)
+        self._key = key
+
+    def __lt__(self, other):
+        return self._key < getattr(other, "_key", 0)
+
+
+SHOW_CHOICES = {"Devices on my network": "local", "Outside addresses (internet)": "outside", "Everything": "all"}
+
+
+class DevicesView(QWidget):
+    """Every address in a capture: a sortable table and, for the selected one, a full rundown."""
+
+    COLS = ["Device", "Maker", "Sent", "Received", "Talked to", "Problems"]
+
+    def __init__(self, ctx: AppContext, parent=None):
+        super().__init__(parent)
+        self.ctx = ctx
+        self.row: dict | None = None
+        self.stats: ta.CaptureStats | None = None
+        self.hosts: list[th.HostRundown] = []
+        self.labels: dict = {}
+        self.show = QComboBox()
+        self.show.addItems(list(SHOW_CHOICES))
+        self.show.setToolTip("Which addresses to list: devices on your own network, the internet addresses they "
+                             "talked to, or both.")
+        self.count = QLabel()
+        self.scan_btn = QPushButton("Scan this device…")
+        tip(self.scan_btn, "Open Scan a Target with this address filled in, to see its open ports and software "
+                           "(it must be in your authorized targets).")
+        top = QHBoxLayout()
+        top.addWidget(QLabel("Show:"))
+        top.addWidget(self.show)
+        top.addWidget(self.count, 1)
+        top.addWidget(self.scan_btn)
+        self.table = QTableWidget(0, len(self.COLS))
+        self.table.setHorizontalHeaderLabels(self.COLS)
+        self.table.verticalHeader().setVisible(False)
+        self.table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
+        self.table.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
+        self.table.setSelectionMode(QTableWidget.SelectionMode.SingleSelection)
+        self.table.setSortingEnabled(True)
+        self.table.setToolTip("Click a device to see everything it did. Click a column header to sort.")
+        hh = self.table.horizontalHeader()
+        hh.setSectionResizeMode(QHeaderView.ResizeMode.ResizeToContents)
+        hh.setStretchLastSection(True)
+        self.detail = QTextBrowser()
+        split = QSplitter()
+        split.addWidget(self.table)
+        split.addWidget(self.detail)
+        split.setStretchFactor(0, 1)
+        split.setStretchFactor(1, 1)
+        lay = QVBoxLayout(self)
+        lay.setContentsMargins(0, 0, 0, 0)
+        lay.addLayout(top)
+        lay.addWidget(split, 1)
+        self.show.currentIndexChanged.connect(lambda _i: self._fill())
+        self.table.itemSelectionChanged.connect(self._selected)
+        self.scan_btn.clicked.connect(self._scan)
+        ctx.bus.scan_finished.connect(lambda: self.show_capture(self.row))
+        ctx.bus.targets_changed.connect(self._selected)
+        self.show_capture(None)
+
+    def show_capture(self, row: dict | None):
+        self.row = row
+        if not row or row.get("error"):
+            self.hosts, self.stats = [], None
+            self._fill()
+            return
+        self.stats = ta.stats_from_json(row.get("stats_json"))
+        scans = self.ctx.scans.with_output()
+        nmap_hosts = th.devices_from_scans(scans, self.stats.local_nets)
+        self.labels = {a: h.label for a, (h, _s) in nmap_hosts.items()}
+        live = row["source"].startswith("interface:")
+        extra = list(nmap_hosts) if live else []      # devices found by ping/nmap scans of this network
+        self.hosts = th.rundown(self.stats, ta.events_from_json(row.get("events_json")), self.labels, nmap_hosts,
+                                extra)
+        self._fill()
+
+    def visible(self) -> list[th.HostRundown]:
+        mode = SHOW_CHOICES[self.show.currentText()]
+        return [h for h in self.hosts if mode == "all" or (mode == "local") == h.local]
+
+    def _fill(self):
+        hosts = self.visible()
+        cur = self.current()
+        self.table.setSortingEnabled(False)
+        self.table.setRowCount(len(hosts))
+        for r, h in enumerate(hosts):
+            worst = h.findings[0].severity if h.findings else ""
+            problems = (f"{len(h.findings)} ({worst})" if h.findings else
+                        ("not seen in traffic" if not h.seen_in_traffic else "none"))
+            cells = [
+                _SortItem(h.title, tuple(int(x) if x.isdigit() else 0 for x in h.ip.split("."))),
+                _SortItem(h.vendor or "", h.vendor or ""),
+                _SortItem(th.size(h.bytes_sent), h.bytes_sent),
+                _SortItem(th.size(h.bytes_received), h.bytes_received),
+                _SortItem(str(len(h.unicast_peers)), len(h.unicast_peers)),
+                _SortItem(problems, -(10 - SEV_RANK.get(worst, 9)) if h.findings else 0),
+            ]
+            cells[0].setData(Qt.ItemDataRole.UserRole, h.ip)
+            cells[0].setToolTip(th.summary_line(h))
+            if worst in ("Critical", "High"):
+                cells[5].setForeground(Qt.GlobalColor.darkRed)
+            if not h.seen_in_traffic:
+                for c in cells:
+                    c.setForeground(Qt.GlobalColor.gray)
+            for c, it in enumerate(cells):
+                self.table.setItem(r, c, it)
+        self.table.setSortingEnabled(True)
+        total = len(self.hosts)
+        if not self.row:
+            self.count.setText("")
+            self.detail.setMarkdown("Capture or open a file first; every address it contains will be listed here.")
+        elif self.row.get("error"):
+            self.count.setText("")
+            self.detail.setMarkdown("This capture failed, so there are no devices to show. Try **Analyze again**.")
+        elif self.stats is not None and self.stats.packets and not self.stats.endpoints:
+            self.count.setText("")
+            self.detail.setMarkdown("This capture was analyzed by an older Watchtower version that didn't collect "
+                                    "per-device details. Click **Analyze again** (under the capture list) to get "
+                                    "the device rundown.")
+        else:
+            local = sum(1 for h in self.hosts if h.local)
+            self.count.setText(f"{local} device(s) on your network, {total - local} outside address(es)")
+            if not hosts:
+                self.detail.setMarkdown("Nothing to show with this filter. Try **Show: Everything**.")
+        target = next((i for i in range(self.table.rowCount())
+                       if self.table.item(i, 0).data(Qt.ItemDataRole.UserRole) == cur), 0 if hosts else None)
+        if target is not None:
+            self.table.selectRow(target)
+        self._selected()
+
+    def current(self) -> str | None:
+        rows = self.table.selectionModel().selectedRows() if self.table.selectionModel() else []
+        return self.table.item(rows[0].row(), 0).data(Qt.ItemDataRole.UserRole) if rows else None
+
+    def _selected(self):
+        ip = self.current()
+        h = next((x for x in self.hosts if x.ip == ip), None)
+        if h and self.stats is not None:
+            text = th.host_markdown(h, self.stats, self.labels)
+            if not h.seen_in_traffic:
+                text += ("\n\n*This device answered the ping scan but sent nothing while Watchtower was listening. "
+                         "Try a longer capture while it's in use.*")
+            self.detail.setMarkdown(text)
+        covered = bool(ip and self.ctx.targets.covers(ip))
+        self.scan_btn.setEnabled(covered)
+        restore_tip(self.scan_btn, "" if covered else
+                    ("Select a device first." if not ip else
+                     f"{ip} isn't in your authorized targets. Add it in Scan a Target first."))
+
+    def _scan(self):
+        ip = self.current()
+        if ip and self.ctx.targets.covers(ip):
+            self.ctx.bus.request_scan.emit(ip)

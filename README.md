@@ -42,7 +42,9 @@ All 11 build steps are done, plus one-click fixes:
   and DKIM key sizes) and passive subdomain discovery (subfinder, amass -passive, or built-in crt.sh)
 - **Traffic Audit:** Wireshark-style live capture (dumpcap) or .pcap import, analyzed with tshark into
   findings: passwords sent unencrypted (never shown or stored), LLMNR/NBT-NS/WPAD, SMBv1, old TLS, UPnP, plain
-  DNS; traffic overview; optional repeating captures compared in What Changed; Open in Wireshark
+  DNS; a per-device rundown of every IP address (who it is: name, MAC maker; what it did: services used/offered,
+  names looked up, sites visited, who it talked to); optional ping scan to list quiet devices; traffic overview;
+  optional repeating captures compared in What Changed; Open in Wireshark
 - **Password Tools:** strength analyzer (zxcvbn + NIST 800-63B checklist) and breach check
   (Pwned Passwords k-anonymity, or fully offline against a local hash file)
 - **One-click fixes** from Findings: security updates or disabling a risky service on this machine,

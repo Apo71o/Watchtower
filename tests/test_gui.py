@@ -654,3 +654,64 @@ def test_dialogs_explain_their_controls(ctx):
     for dlg in (ExportDialog(ctx, False, None), DependencyDialog(ctx),
                 RunPlanDialog(ctx, "t", "intro", deps.Plan([deps.Step("x", ["true"])], []))):
         assert not _untipped_controls(dlg), (type(dlg).__name__, _untipped_controls(dlg))
+
+
+def test_traffic_devices_view(ctx):
+    if not shutil.which("tshark"):
+        pytest.skip("tshark missing")
+    from watchtower.gui.tabs.traffic_tab import SHOW_CHOICES, TrafficTab
+    tab = TrafficTab(ctx)
+    tab.open_file(str(FX / "traffic_lan.pcapng"))
+    assert wait_for(lambda: tab.cancel_event is None, 60)
+    dv = tab.devices
+    assert dv.count.text() == "3 device(s) on your network, 1 outside address(es)"
+    ips = [dv.table.item(r, 0).data(Qt.ItemDataRole.UserRole) for r in range(dv.table.rowCount())]
+    assert sorted(ips) == ["10.9.0.1", "10.9.0.23", "10.9.0.42"]
+    r = ips.index("10.9.0.23")
+    assert dv.table.item(r, 1).text() == "Raspberry Pi Foundation" and "High" in dv.table.item(r, 5).text()
+    dv.table.selectRow(r)
+    text = dv.detail.toPlainText()
+    for needle in ("10.9.0.23 (homeassistant)", "Who it is", "cloud.camvendor.example", "Services it offered"):
+        assert needle in text, needle
+    assert "SECRET" not in text
+    # not an authorized target yet -> can't jump to a scan; once authorized, it opens Scan a Target
+    assert not dv.scan_btn.isEnabled() and "authorized targets" in dv.scan_btn.toolTip()
+    asked = []
+    ctx.bus.request_scan.connect(asked.append)
+    ctx.targets.add("10.9.0.0/24")
+    ctx.bus.targets_changed.emit()
+    assert dv.scan_btn.isEnabled()
+    dv.scan_btn.click()
+    assert asked == ["10.9.0.23"]
+    dv.show.setCurrentText(next(k for k, v in SHOW_CHOICES.items() if v == "outside"))
+    assert dv.table.rowCount() == 1 and dv.table.item(0, 0).data(Qt.ItemDataRole.UserRole) == "203.0.113.10"
+
+
+def test_traffic_quiet_device_scan_needs_authorization(ctx):
+    from watchtower.gui.tabs.traffic_tab import TrafficTab
+    if not shutil.which("nmap"):
+        pytest.skip("nmap missing")
+    tab = TrafficTab(ctx)
+    tab.iface.addItem("lab0", "lab0")
+    tab.iface.setCurrentIndex(tab.iface.count() - 1)
+    tab._nets["lab0"] = ["10.9.0.0/24"]
+    tab._gate()
+    assert not tab.discover.isEnabled() and "isn't in your authorized targets" in tab.discover.toolTip()
+    ctx.targets.add("10.9.0.0/24")
+    tab._gate()
+    assert tab.discover.isEnabled() and "ping scan" in tab.discover.toolTip()
+    tab._nets["lab0"] = ["10.0.0.0/16"]
+    ctx.targets.add("10.0.0.0/16")
+    tab._gate()
+    assert not tab.discover.isEnabled() and "too large" in tab.discover.toolTip()
+
+
+def test_devices_view_asks_to_reanalyze_old_captures(ctx):
+    from watchtower.core import traffic_audit as ta
+    from watchtower.gui.tabs.traffic_tab import DevicesView
+    old = ta.CaptureStats(packets=176, seconds=8.0)          # pre-rundown analysis: no endpoints/flows
+    cid = ctx.captures.start("file:/tmp/x.pcapng", "/tmp/x.pcapng", False, "open")
+    ctx.captures.finish(cid, 0, 176, 8.0, ta.stats_to_json(old), "[]")
+    dv = DevicesView(ctx)
+    dv.show_capture(ctx.captures.get(cid))
+    assert "Analyze again" in dv.detail.toPlainText() and dv.table.rowCount() == 0

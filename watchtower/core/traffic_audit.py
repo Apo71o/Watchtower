@@ -142,7 +142,165 @@ def fields_argv(pcap: str = STDIN) -> list[str]:
 
 def stats_argv(pcap: str = STDIN) -> list[str]:
     return [tshark_binary() or "tshark", "-r", pcap, "-q", "-n", "-z", "io,phs", "-z", "conv,ip", "-z", "conv,ipv6",
-            "-z", "io,stat,0"]
+            "-z", "io,stat,0", "-z", "endpoints,ip", "-z", "endpoints,ipv6", "-z", "conv,tcp", "-z", "conv,udp"]
+
+
+# Per-device identity and activity: who is this address (MAC maker, DHCP/mDNS name) and what did it
+# ask for (DNS names, TLS server names, HTTP host + path). URL query strings are dropped by the parser.
+ACTIVITY_FIELDS = [
+    "frame.time_relative", "frame.protocols", "eth.src", "eth.src.oui_resolved", "ip.src", "ipv6.src",
+    "arp.opcode", "arp.src.hw_mac", "arp.src.proto_ipv4",
+    "dhcp.hw.mac_addr", "dhcp.option.hostname", "dhcp.option.vendor_class_id", "dhcp.option.requested_ip_address",
+    "dhcp.ip.client", "dns.qry.name", "dns.flags.response", "dns.resp.name", "dns.a",
+    "tls.handshake.type", "tls.handshake.extensions_server_name", "http.request.method", "http.host",
+    "http.request.uri",
+]
+ACTIVITY_FILTER = ("arp or dhcp or dns or tls.handshake.type == 1 or http.request")
+
+
+def activity_argv(pcap: str = STDIN) -> list[str]:
+    # -N m: resolve MAC address makers from Wireshark's bundled list (local; no DNS lookups)
+    argv = [tshark_binary() or "tshark", "-r", pcap, "-N", "m", "-Y", ACTIVITY_FILTER, "-T", "fields",
+            "-E", "separator=/t", "-E", "occurrence=a", "-E", "aggregator=|", "-E", "header=y"]
+    for f in ACTIVITY_FIELDS:
+        argv += ["-e", f]
+    return argv
+
+
+def first_packet_argv(pcap: str = STDIN) -> list[str]:
+    return [tshark_binary() or "tshark", "-r", pcap, "-c", "1", "-T", "fields", "-e", "frame.time_epoch"]
+
+
+_LAN_NETS = [ipaddress.ip_network(n) for n in ("10.0.0.0/8", "172.16.0.0/12", "192.168.0.0/16", "169.254.0.0/16",
+                                                "100.64.0.0/10", "fc00::/7", "fe80::/10")]
+
+
+def is_lan(ip: str, local_nets: list[str] | None = None) -> bool:
+    """On your own network: inside the capturing interface's networks if known, else a private LAN range."""
+    try:
+        a = ipaddress.ip_address(ip)
+    except ValueError:
+        return False
+    if a.is_multicast or a.is_unspecified or ip == "255.255.255.255" or a.is_loopback:
+        return False
+    nets = []
+    for n in local_nets or []:
+        try:
+            nets.append(ipaddress.ip_network(n, strict=False))
+        except ValueError:
+            continue
+    if nets:
+        return any(a in n for n in nets if n.version == a.version)
+    return any(a in n for n in _LAN_NETS if n.version == a.version)
+
+
+def is_unicast(ip: str) -> bool:
+    try:
+        a = ipaddress.ip_address(ip)
+    except ValueError:
+        return False
+    return not (a.is_multicast or a.is_unspecified or ip == "255.255.255.255" or ip.endswith(".255"))
+
+
+def _strip_query(uri: str) -> str:
+    """Path only: query strings and fragments often carry tokens/session ids."""
+    path = uri.split("?", 1)[0].split("#", 1)[0]
+    return path[:120] + ("…" if len(path) > 120 else "")
+
+
+def parse_activity(text: str, local_nets: list[str] | None = None) -> dict[str, dict]:
+    """tshark activity_argv output -> {ip: {"macs", "vendor", "names", "dhcp_vendor", "dns", "sni", "http",
+    "first", "last"}}. Names come from DHCP (hostname option), mDNS answers and the MAC <-> IP pairs seen in
+    ARP and normal traffic; MACs are only tied to addresses on your network (a router's MAC carries the
+    whole internet)."""
+    lines = text.splitlines()
+    if not lines:
+        return {}
+    header = lines[0].split("\t")
+    hosts: dict[str, dict] = {}
+    mac_ips: dict[str, set] = defaultdict(set)
+    mac_vendor: dict[str, str] = {}
+    mac_info: dict[str, dict] = defaultdict(dict)
+
+    def host(ip):
+        return hosts.setdefault(ip, {"macs": [], "vendor": "", "names": [], "dhcp_vendor": "", "dns": {},
+                                     "sni": {}, "http": {}, "first": None, "last": None})
+
+    def bump(d, k):
+        if k:
+            d[k] = d.get(k, 0) + 1
+
+    for line in lines[1:]:
+        cols = line.split("\t")
+        r = dict(zip(header, cols + [""] * (len(header) - len(cols)), strict=False))
+        protos = r.get("frame.protocols", "").split(":")
+        if "icmp" in protos or "icmpv6" in protos:
+            continue
+        src = _first(r.get("ip.src") or r.get("ipv6.src", ""))
+        mac = _first(r.get("eth.src", "")).lower()
+        try:
+            t = float(_first(r.get("frame.time_relative", "")) or "nan")
+        except ValueError:
+            t = float("nan")
+        if mac and r.get("eth.src.oui_resolved"):
+            mac_vendor[mac] = _first(r["eth.src.oui_resolved"])
+        if "arp" in protos:
+            amac, aip = _first(r.get("arp.src.hw_mac", "")).lower(), _first(r.get("arp.src.proto_ipv4", ""))
+            if amac and aip and aip != "0.0.0.0":
+                mac_ips[amac].add(aip)
+            continue
+        if src and mac and is_lan(src, local_nets) and src not in ("0.0.0.0", "::"):
+            mac_ips[mac].add(src)
+        if "dhcp" in protos:
+            dmac = _first(r.get("dhcp.hw.mac_addr", "")).lower() or mac
+            info = mac_info[dmac]
+            if r.get("dhcp.option.hostname"):
+                info["name"] = _first(r["dhcp.option.hostname"])
+            if r.get("dhcp.option.vendor_class_id"):
+                info["dhcp_vendor"] = _first(r["dhcp.option.vendor_class_id"])
+            for k in ("dhcp.option.requested_ip_address", "dhcp.ip.client"):
+                v = _first(r.get(k, ""))
+                if v and v != "0.0.0.0":
+                    mac_ips[dmac].add(v)
+            continue
+        if not src:
+            continue
+        h = host(src)
+        if t == t:          # not NaN
+            h["first"] = t if h["first"] is None else min(h["first"], t)
+            h["last"] = t if h["last"] is None else max(h["last"], t)
+        if "mdns" in protos:
+            # mDNS answers: "<name>.local has address <ip>"
+            for name, addr in zip(r.get("dns.resp.name", "").split("|"), r.get("dns.a", "").split("|"),
+                                  strict=False):
+                if name and addr and name.endswith(".local"):
+                    nm = name.removesuffix(".local")
+                    if nm not in host(addr)["names"]:
+                        host(addr)["names"].append(nm)
+            continue
+        if "llmnr" in protos or "nbns" in protos:
+            continue
+        if "dns" in protos and r.get("dns.flags.response", "").split("|")[0] in ("False", "0"):
+            bump(h["dns"], _first(r.get("dns.qry.name", "")).rstrip(".").lower())
+        if "1" in r.get("tls.handshake.type", "").split("|"):
+            bump(h["sni"], _first(r.get("tls.handshake.extensions_server_name", "")).lower())
+        method = _first(r.get("http.request.method", ""))
+        if method and "ssdp" not in protos:
+            hh = _first(r.get("http.host", ""))
+            bump(h["http"], f"{method} {hh}{_strip_query(_first(r.get('http.request.uri', '')))}")
+    for mac, ips in mac_ips.items():
+        for ip in ips:
+            h = host(ip)
+            if mac not in h["macs"]:
+                h["macs"].append(mac)
+            if mac_vendor.get(mac) and not h["vendor"]:
+                h["vendor"] = mac_vendor[mac]
+            info = mac_info.get(mac, {})
+            if info.get("name") and info["name"] not in h["names"]:
+                h["names"].insert(0, info["name"])
+            if info.get("dhcp_vendor"):
+                h["dhcp_vendor"] = info["dhcp_vendor"]
+    return hosts
 
 
 @dataclass
@@ -290,14 +448,57 @@ class Conversation:
 
 
 @dataclass
+class Endpoint:
+    address: str
+    packets: int
+    bytes: int
+    tx_packets: int
+    tx_bytes: int
+    rx_packets: int
+    rx_bytes: int
+
+
+@dataclass
+class Flow:
+    """One TCP/UDP conversation between two address:port pairs (tshark conv,tcp / conv,udp)."""
+    proto: str          # "tcp" | "udp"
+    a: str
+    a_port: int
+    b: str
+    b_port: int
+    frames_ab: int      # a -> b
+    bytes_ab: int
+    frames_ba: int      # b -> a
+    bytes_ba: int
+    start: float        # seconds from the start of the capture
+    duration: float
+
+
+@dataclass
 class CaptureStats:
     packets: int = 0
     seconds: float = 0.0
     protocols: list[tuple[str, int, int]] = field(default_factory=list)   # (name, depth, frames)
     conversations: list[Conversation] = field(default_factory=list)
+    endpoints: list[Endpoint] = field(default_factory=list)
+    flows: list[Flow] = field(default_factory=list)
+    activity: dict = field(default_factory=dict)        # ip -> per-device activity (see parse_activity)
+    start_epoch: float | None = None                    # absolute time of the first packet
+    local_nets: list[str] = field(default_factory=list)  # the capturing interface's networks (live captures)
 
 
 _UNITS = {"bytes": 1, "": 1, "kB": 1000, "KiB": 1024, "MB": 10**6, "MiB": 2**20, "GB": 10**9, "GiB": 2**30}
+
+
+def _nums(text: str) -> list[float]:
+    """Numbers in a tshark statistics row, with byte units (kB, MiB, ...) applied."""
+    pairs = re.findall(r"(\d+(?:\.\d+)?)\s*(bytes|kB|KiB|MB|MiB|GB|GiB)?", text)
+    return [float(n) * _UNITS.get(u, 1) for n, u in pairs]
+
+
+def _addr_port(tok: str) -> tuple[str, int] | None:
+    addr, _, port = tok.rpartition(":")
+    return (addr.strip("[]"), int(port)) if addr and port.isdigit() else None
 
 
 def parse_stats(text: str) -> CaptureStats:
@@ -312,6 +513,13 @@ def parse_stats(text: str) -> CaptureStats:
             continue
         if re.search(r"IPv[46] Conversations", line):
             section = "conv"
+            continue
+        m = re.search(r"(TCP|UDP) Conversations", line)
+        if m:
+            section = m.group(1).lower()
+            continue
+        if re.search(r"IPv[46] Endpoints", line):
+            section = "endpoints"
             continue
         if line.startswith("=====") or "IO Statistics" in line:
             section = "" if "IO Statistics" in line else section
@@ -328,6 +536,20 @@ def parse_stats(text: str) -> CaptureStats:
                     total_frames = int(float(nums[4][0]))
                     total_bytes = int(float(nums[5][0]) * _UNITS.get(nums[5][1], 1))
                     st.conversations.append(Conversation(m.group(1), m.group(2), total_frames, total_bytes))
+        elif section in ("tcp", "udp"):
+            m = re.match(r"^(\S+)\s+<->\s+(\S+)\s+(.*)$", line)
+            a, b = (_addr_port(m.group(1)), _addr_port(m.group(2))) if m else (None, None)
+            if a and b:
+                n = _nums(m.group(3))
+                if len(n) >= 8:
+                    st.flows.append(Flow(section, a[0], a[1], b[0], b[1], int(n[2]), int(n[3]), int(n[0]), int(n[1]),
+                                         n[6], n[7]))
+        elif section == "endpoints":
+            m = re.match(r"^(\S+)\s+(\d.*)$", line)
+            if m:
+                n = _nums(m.group(2))
+                if len(n) >= 6:
+                    st.endpoints.append(Endpoint(m.group(1), *(int(x) for x in n[:6])))
     if st.protocols:
         st.packets = st.protocols[0][2]
     st.conversations.sort(key=lambda c: -c.bytes)
@@ -535,7 +757,9 @@ def stats_from_json(text: str) -> CaptureStats:
     if not d:
         return CaptureStats()
     return CaptureStats(d.get("packets", 0), d.get("seconds", 0.0), [tuple(p) for p in d.get("protocols", [])],
-                        [Conversation(**c) for c in d.get("conversations", [])])
+                        [Conversation(**c) for c in d.get("conversations", [])],
+                        [Endpoint(**e) for e in d.get("endpoints", [])], [Flow(**f) for f in d.get("flows", [])],
+                        d.get("activity", {}), d.get("start_epoch"), d.get("local_nets", []))
 
 
 # ---- running an analysis (shared by the tab and scheduled captures) ----
@@ -571,7 +795,7 @@ def unreadable_reason(pcap: str) -> str:
         return f"Can't read {pcap}: {exc}"
 
 
-def analyze_pcap(runner, pcap: str, target: str | None = None) -> Analysis:
+def analyze_pcap(runner, pcap: str, target: str | None = None, local_nets: list[str] | None = None) -> Analysis:
     """Run tshark (fields + statistics) on a capture file. Blocking. Watchtower opens the file
     and pipes it to tshark, so AppArmor path rules on tshark don't matter. The tshark output is
     parsed in memory only; CommandRunner logs commands, not output."""
@@ -588,6 +812,16 @@ def analyze_pcap(runner, pcap: str, target: str | None = None) -> Analysis:
     events = parse_fields(res.stdout)
     st = parse_stats(runner.run(stats_argv(), purpose="Traffic audit: statistics (tshark)", target=target,
                                 timeout=1800, stdin_file=pcap).stdout)
+    st.local_nets = list(local_nets or [])
+    act = runner.run(activity_argv(), purpose="Traffic audit: who each device is and what it asked for (tshark)",
+                     target=target, timeout=1800, stdin_file=pcap)
+    st.activity = parse_activity(act.stdout, st.local_nets)
+    first = runner.run(first_packet_argv(), purpose="Traffic audit: capture start time (tshark)", target=target,
+                       timeout=120, stdin_file=pcap)
+    try:
+        st.start_epoch = float(first.stdout.split()[0])
+    except (IndexError, ValueError):
+        st.start_epoch = None
     return Analysis(events, st)
 
 

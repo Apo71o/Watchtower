@@ -31,6 +31,7 @@ from watchtower.core import (
     nvd,
     remediation,
     subdomain_enum,
+    traffic_hosts,
 )
 from watchtower.core.assessment import Assessment, assess
 from watchtower.core.findings_engine import SEV_RANK, SEVERITIES, Finding, latest_hosts
@@ -637,6 +638,8 @@ def device_markdown(a: Assessment, device: str, exclude: str | None = None) -> s
                              ("Source", s.get("tool"))])
     else:
         lines += [f"## {device}", ""]
+    if a.captures and device not in a.networks:
+        lines += traffic_hosts.host_brief(a.captures, device)
     if risk:
         b = risk.breakdown
         lines += ["### Risk score", "",

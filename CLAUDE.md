@@ -71,6 +71,8 @@ watchtower/
   core/subdomain_enum.py passive only: subfinder / amass enum -passive (refused if absent) / crt.sh; parsers
   core/traffic_audit.py  dumpcap capture argv (EAPOL always excluded, monitor-mode refused), tshark FIELDS ->
                          parse_fields() -> Event (names only, never secrets) -> findings(); stats; diff_captures()
+  core/traffic_hosts.py  per-device rundown (rundown(), host_markdown(), host_brief()), opt-in ping_scan() of an
+                         authorized <= /22 local network (nmap -sn, stored as a normal scan)
   gui/ui.py              tip()/restore_tip(): every control's tooltip (enforced by test_every_control_explains_itself)
   storage/db.py          SQLite + MIGRATIONS list (append new entries, never edit old ones)
   storage/audit_log.py   append-only log (DB triggers block UPDATE/DELETE); Event enum
@@ -273,6 +275,18 @@ Same rules: authorized/own targets only, ownership gate for new target types, ev
       can't read stdin). Tab has "Analyze again" for captures whose analysis failed. This
       OpenSSL had no 3DES, so weak-cipher detection is unit-tested with synthetic rows. Verify locally: capture on
       your real LAN/Wi-Fi interface without root after "Allow capturing…", and Open in Wireshark.
+- [x] Network rundown (user request 2026-11-01: "a rundown of each ip address on the network, overview of all its
+      requests and traffic"): analyze_pcap() now also runs tshark endpoints/conv,tcp/conv,udp (CaptureStats.endpoints,
+      .flows), an activity pass (ACTIVITY_FIELDS with `-N m` for offline MAC-maker names: DHCP hostname/vendor class,
+      ARP/IP MAC<->IP pairs (only for LAN addresses: a router's MAC carries the internet), mDNS names, DNS queries,
+      TLS SNI, HTTP method+host+path with query strings DROPPED) and the first-packet time; stats.local_nets = the
+      interface's networks for live captures (private ranges otherwise; note Python's is_private counts TEST-NETs, so
+      ta.is_lan uses an explicit RFC1918/CGNAT/ULA list). Traffic Audit "Devices" results tab (DevicesView: filter
+      local/outside/all, sortable table, host_markdown detail, "Scan this device…" -> request_scan if authorized),
+      Findings device pane "Traffic seen", report "Devices seen in network traffic". Opt-in "Also find quiet
+      devices" = nmap ping scan after the capture, only if the interface network is authorized and <= /22.
+      Fixture traffic_lan.pcapng: REAL capture on a bridge between Linux network namespaces (router, Raspberry
+      Pi MAC, Apple MAC, TEST-NET "internet" server) with DHCP/ARP/DNS/TLS/HTTP/FTP/Telnet/SSDP/mDNS/LLMNR.
 - [x] GUI clarity pass (2026-11-01): tooltips on every control (gui/ui.py + enforcing tests), Help Overview rewritten
       with a "Where to start" goal->tab table and accurate network-call list, first launch opens Help, stale help
       texts fixed (Audit Log, Settings), "Data && history" mnemonic bug, plain status bar, NVD checkbox label.

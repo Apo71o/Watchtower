@@ -257,9 +257,26 @@ it shows, in plain language, with how to fix each one.
    them on a schedule. Each run is compared with the previous one in
    **What Changed**, so a device that starts sending passwords unencrypted shows
    up as an alert.
-4. Read the results under **What was found**. **Traffic overview** shows who
-   talked to whom and which protocols were used. **Open in Wireshark** shows
-   every packet.
+4. Read the results under **What was found**. **Devices** lists every address
+   in the capture; click one for its rundown (below). **Traffic overview**
+   shows who talked to whom and which protocols were used. **Open in
+   Wireshark** shows every packet.
+
+**The Devices rundown** (one per IP address)
+- **Who it is:** name (from DHCP, mDNS or an nmap scan), MAC address and the
+  maker that MAC belongs to, a system hint from DHCP, when it was active and
+  how much it sent and received.
+- **What it did:** the services it used (e.g. HTTPS to an internet server, DNS
+  to your router) and the services it offered to others, the names it looked
+  up, the encrypted sites it connected to (by server name), unencrypted web
+  requests (host and path; query strings are never shown), and everyone it
+  talked to, on your network or the internet.
+- **Problems seen** for that device, linking to the full findings.
+- **Also find quiet devices** (step 1, optional): after the capture, runs a
+  quick nmap ping scan of the interface's network so devices that stayed
+  silent are listed too. It sends packets, so it's only offered when that
+  network is in your authorized targets (and no bigger than a /22).
+  **Scan this device…** opens Scan a Target for the selected address.
 
 **What it looks for**
 - **Passwords sent without encryption:** FTP, Telnet, POP3, IMAP, SMTP AUTH,
@@ -470,6 +487,17 @@ GLOSSARY: list[tuple[str, str]] = [
 ("Capture filter (BPF)",
  "A small expression that decides which packets are recorded, e.g. `host 192.168.1.20` or `port 21`. It uses "
  "the Berkeley Packet Filter syntax shared by tcpdump and Wireshark's capture filters."),
+("MAC address / maker (OUI)",
+ "The hardware address of a network card, like b8:27:eb:12:34:56. Its first half identifies the manufacturer "
+ "(b8:27:eb = Raspberry Pi), which is how Watchtower names the maker of a device. Some phones and laptops use "
+ "random 'private' MACs on Wi-Fi, which have no maker."),
+("TLS server name (SNI)",
+ "When a device opens an encrypted (HTTPS) connection, it names the website it wants before encryption starts. "
+ "That name is visible on the network even though the content isn't, so Traffic Audit can show which sites a "
+ "device connected to without seeing what it sent."),
+("DHCP",
+ "How devices get an IP address when they join a network. Many announce a host name (e.g. 'alice-macbook') and "
+ "a vendor string (e.g. 'android-dhcp-14', 'MSFT 5.0') while doing so, which identifies them."),
 ("Cleartext protocol",
  "A protocol that sends data, including passwords, without encryption: FTP, Telnet, HTTP, POP3, IMAP, SNMP v1/v2c. "
  "Anyone who can see the traffic can read it. Each has an encrypted replacement (SFTP, SSH, HTTPS, POP3S/IMAPS, "

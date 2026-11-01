@@ -1,0 +1,30 @@
+frame.time_relative	frame.protocols	eth.src	eth.src.oui_resolved	ip.src	ipv6.src	arp.opcode	arp.src.hw_mac	arp.src.proto_ipv4	dhcp.hw.mac_addr	dhcp.option.hostname	dhcp.option.vendor_class_id	dhcp.option.requested_ip_address	dhcp.ip.client	dns.qry.name	dns.flags.response	dns.resp.name	dns.a	tls.handshake.type	tls.handshake.extensions_server_name	http.request.method	http.host	http.request.uri
+0.000000000	eth:ethertype:ip:udp:dhcp	b8:27:eb:12:34:56	Raspberry Pi Foundation	10.9.0.23					b8:27:eb:12:34:56	homeassistant	dhcpcd-9.4.1:Linux-6.1:armv7l		0.0.0.0									
+1.302609725	eth:ethertype:arp	b8:27:eb:12:34:56	Raspberry Pi Foundation			1	b8:27:eb:12:34:56	10.9.0.23														
+1.302688519	eth:ethertype:arp	02:00:00:00:00:01				2	02:00:00:00:00:01	10.9.0.1														
+1.302694317	eth:ethertype:ip:udp:dns	b8:27:eb:12:34:56	Raspberry Pi Foundation	10.9.0.23										cloud.camvendor.example	False							
+1.307052005	eth:ethertype:ip:udp:dns	02:00:00:00:00:01		10.9.0.1										cloud.camvendor.example	True	cloud.camvendor.example	203.0.113.10					
+1.307514059	eth:ethertype:ip:udp:dns	b8:27:eb:12:34:56	Raspberry Pi Foundation	10.9.0.23										time.example.net	False							
+1.308202328	eth:ethertype:ip:udp:dns	02:00:00:00:00:01		10.9.0.1										time.example.net	True	time.example.net	203.0.113.10					
+1.308391981	eth:ethertype:ip:udp:dns	b8:27:eb:12:34:56	Raspberry Pi Foundation	10.9.0.23										cloud.camvendor.example	False							
+1.308639175	eth:ethertype:ip:udp:dns	02:00:00:00:00:01		10.9.0.1										cloud.camvendor.example	True	cloud.camvendor.example	203.0.113.10					
+1.309233569	eth:ethertype:ip:tcp:http:json	b8:27:eb:12:34:56	Raspberry Pi Foundation	10.9.0.23																POST	cloud.camvendor.example	/api/v2/upload?device_key=K3Y-SECRET
+1.346382588	eth:ethertype:ip:tcp:tls	b8:27:eb:12:34:56	Raspberry Pi Foundation	10.9.0.23														1	cloud.camvendor.example			
+1.494815522	eth:ethertype:ip:udp:dhcp	3c:22:fb:ab:cd:ef	Apple, Inc.	10.9.0.42					3c:22:fb:ab:cd:ef	alice-macbook	MSFT 5.0		0.0.0.0									
+3.097630721	eth:ethertype:arp	3c:22:fb:ab:cd:ef	Apple, Inc.			1	3c:22:fb:ab:cd:ef	10.9.0.42														
+3.097686503	eth:ethertype:arp	02:00:00:00:00:01				2	02:00:00:00:00:01	10.9.0.1														
+3.097694852	eth:ethertype:ip:udp:dns	3c:22:fb:ab:cd:ef	Apple, Inc.	10.9.0.42										www.example.com	False							
+3.098636317	eth:ethertype:ip:udp:dns	02:00:00:00:00:01		10.9.0.1										www.example.com	True	www.example.com	203.0.113.10					
+3.099511936	eth:ethertype:ip:udp:dns	3c:22:fb:ab:cd:ef	Apple, Inc.	10.9.0.42										updates.example.org	False							
+3.100141224	eth:ethertype:ip:udp:dns	02:00:00:00:00:01		10.9.0.1										updates.example.org	True	updates.example.org	203.0.113.10					
+3.100489778	eth:ethertype:ip:udp:dns	3c:22:fb:ab:cd:ef	Apple, Inc.	10.9.0.42										www.example.com	False							
+3.100893108	eth:ethertype:ip:udp:dns	02:00:00:00:00:01		10.9.0.1										www.example.com	True	www.example.com	203.0.113.10					
+3.101100575	eth:ethertype:ip:udp:dns	3c:22:fb:ab:cd:ef	Apple, Inc.	10.9.0.42										fileserver.lan	False							
+3.101380642	eth:ethertype:ip:udp:dns	02:00:00:00:00:01		10.9.0.1										fileserver.lan	True							
+3.124584378	eth:ethertype:ip:tcp:tls	3c:22:fb:ab:cd:ef	Apple, Inc.	10.9.0.42														1	www.example.com			
+3.150288590	eth:ethertype:ip:tcp:tls	3c:22:fb:ab:cd:ef	Apple, Inc.	10.9.0.42														1	updates.example.org			
+3.154027774	eth:ethertype:ip:tcp:http	3c:22:fb:ab:cd:ef	Apple, Inc.	10.9.0.42																GET	router.lan	/admin/status.cgi?session=S3SS-SECRET
+5.961118266	eth:ethertype:arp	3c:22:fb:ab:cd:ef	Apple, Inc.			1	3c:22:fb:ab:cd:ef	10.9.0.42														
+5.961150676	eth:ethertype:arp	b8:27:eb:12:34:56	Raspberry Pi Foundation			2	b8:27:eb:12:34:56	10.9.0.23														
+6.491789430	eth:ethertype:arp	02:00:00:00:00:01				1	02:00:00:00:00:01	10.9.0.1														
+6.491841307	eth:ethertype:arp	b8:27:eb:12:34:56	Raspberry Pi Foundation			2	b8:27:eb:12:34:56	10.9.0.23														

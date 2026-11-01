@@ -1,0 +1,31 @@
+frame.number	frame.protocols	ip.src	ipv6.src	ip.dst	ipv6.dst	tcp.srcport	tcp.dstport	udp.dstport	http.request.method	http.host	http.authorization	urlencoded-form.key	ftp.request.command	pop.request.command	imap.request.command	smtp.req.command	snmp.version	snmp.community	smb.cmd	smb2.cmd	nbns.name	dns.qry.name	dns.flags.response	tls.handshake.type	tls.handshake.version	tls.handshake.extensions.supported_version	tls.handshake.ciphersuite	tls.handshake.extensions_server_name
+4	eth:ethertype:ip:udp:dns	10.9.0.23		10.9.0.1				53														cloud.camvendor.example	False					
+6	eth:ethertype:ip:udp:dns	10.9.0.23		10.9.0.1				53														time.example.net	False					
+8	eth:ethertype:ip:udp:dns	10.9.0.23		10.9.0.1				53														cloud.camvendor.example	False					
+13	eth:ethertype:ip:tcp:http:json	10.9.0.23		203.0.113.10		55970	80		POST	cloud.camvendor.example																		
+24	eth:ethertype:ip:tcp:tls	10.9.0.23		203.0.113.10		38434	443																	1	0x0303	0x0304|0x0303	0x1302|0x1303|0x1301|0xc02c|0xc030|0x009f|0xcca9|0xcca8|0xccaa|0xc02b|0xc02f|0x009e|0xc024|0xc028|0x006b|0xc023|0xc027|0x0067|0xc00a|0xc014|0x0039|0xc009|0xc013|0x0033|0x009d|0x009c|0x003d|0x003c|0x0035|0x002f|0x00ff	cloud.camvendor.example
+26	eth:ethertype:ip:tcp:tls	203.0.113.10		10.9.0.23		443	38434																	2	0x0303	0x0304	0x1302	
+37	eth:ethertype:ip:udp:ssdp	10.9.0.23		239.255.255.250				1900	NOTIFY	239.255.255.250:1900																		
+41	eth:ethertype:ip:udp:dns	10.9.0.42		10.9.0.1				53														www.example.com	False					
+43	eth:ethertype:ip:udp:dns	10.9.0.42		10.9.0.1				53														updates.example.org	False					
+45	eth:ethertype:ip:udp:dns	10.9.0.42		10.9.0.1				53														www.example.com	False					
+47	eth:ethertype:ip:udp:dns	10.9.0.42		10.9.0.1				53														fileserver.lan	False					
+52	eth:ethertype:ip:tcp:tls	10.9.0.42		203.0.113.10		37968	443																	1	0x0303	0x0304|0x0303	0x1302|0x1303|0x1301|0xc02c|0xc030|0x009f|0xcca9|0xcca8|0xccaa|0xc02b|0xc02f|0x009e|0xc024|0xc028|0x006b|0xc023|0xc027|0x0067|0xc00a|0xc014|0x0039|0xc009|0xc013|0x0033|0x009d|0x009c|0x003d|0x003c|0x0035|0x002f|0x00ff	www.example.com
+54	eth:ethertype:ip:tcp:tls	203.0.113.10		10.9.0.42		443	37968																	2	0x0303	0x0304	0x1302	
+68	eth:ethertype:ip:tcp:tls	10.9.0.42		203.0.113.10		37972	443																	1	0x0303	0x0304|0x0303	0x1302|0x1303|0x1301|0xc02c|0xc030|0x009f|0xcca9|0xcca8|0xccaa|0xc02b|0xc02f|0x009e|0xc024|0xc028|0x006b|0xc023|0xc027|0x0067|0xc00a|0xc014|0x0039|0xc009|0xc013|0x0033|0x009d|0x009c|0x003d|0x003c|0x0035|0x002f|0x00ff	updates.example.org
+70	eth:ethertype:ip:tcp:tls	203.0.113.10		10.9.0.42		443	37972																	2	0x0303	0x0304	0x1302	
+84	eth:ethertype:ip:tcp:http	10.9.0.42		10.9.0.1		45788	80		GET	router.lan																		
+96	eth:ethertype:ip:tcp:ftp	10.9.0.1		10.9.0.42		21	34562																					
+98	eth:ethertype:ip:tcp:ftp	10.9.0.42		10.9.0.1		34562	21						USER															
+100	eth:ethertype:ip:tcp:ftp	10.9.0.1		10.9.0.42		21	34562																					
+102	eth:ethertype:ip:tcp:ftp	10.9.0.42		10.9.0.1		34562	21						PASS															
+103	eth:ethertype:ip:tcp:ftp	10.9.0.1		10.9.0.42		21	34562																					
+105	eth:ethertype:ip:tcp:ftp	10.9.0.42		10.9.0.1		34562	21						QUIT															
+106	eth:ethertype:ip:tcp:ftp	10.9.0.1		10.9.0.42		21	34562																					
+111	eth:ethertype:ip:udp:llmnr	10.9.0.42		224.0.0.252				5355														fileserver	False					
+112	eth:ethertype:ip:udp:mdns	10.9.0.42		224.0.0.251				5353														_airplay._tcp.local	False					
+118	eth:ethertype:ip:tcp:telnet	10.9.0.23		10.9.0.42		23	55006																					
+120	eth:ethertype:ip:tcp:telnet	10.9.0.42		10.9.0.23		55006	23																					
+122	eth:ethertype:ip:tcp:telnet	10.9.0.23		10.9.0.42		23	55006																					
+124	eth:ethertype:ip:tcp:telnet	10.9.0.42		10.9.0.23		55006	23																					
+125	eth:ethertype:ip:tcp:telnet	10.9.0.23		10.9.0.42		23	55006																					
