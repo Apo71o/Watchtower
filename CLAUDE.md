@@ -17,6 +17,11 @@ the "User decisions" section below wins over the spec.
   directly at full capability), and the Scan tab accepts any nmap option via Extra
   arguments. The only checks are scope checks on targets.
 
+- 2026-11-01: **One-click remediation** is wanted (core/remediation.py + Fix bar in Findings):
+  fixes (security updates, disabling a risky service) for this machine via RunPlanDialog, for
+  remote Linux hosts via the user's own SSH in a terminal, otherwise open the admin page. This is
+  defensive remediation, not attack execution; it never logs in with discovered/default creds.
+
 ## Non-negotiables (check every change against these)
 
 1. **No attack execution, ever.** No deauth, handshake/PMKID capture, cracking
@@ -115,6 +120,10 @@ docs/SPEC.md             original build prompt (authoritative requirements)
 - TLS/SNMP fixtures in tests/fixtures are real tool output (testssl.sh 3.2rc3, SSLyze 6, net-snmp)
   captured against local test servers; tests/test_gui.py also runs both audits end-to-end against
   openssl s_server / snmpd when those binaries exist.
+- Remediation: the "stop the service on port X" script was run for real against a non-systemd
+  listener (it refuses, correctly); disabling an actual systemd unit is untested here (no systemd
+  in the cloud container), so verify on the user's machine. The local apt upgrade path was run
+  for real (snmpd).
 - Monitor-mode and airodump-ng paths are unit-tested against fixtures only; the cloud container
   has no Wi-Fi hardware. Verify on real hardware locally.
 
@@ -136,6 +145,9 @@ docs/SPEC.md             original build prompt (authoritative requirements)
 - [x] 6. Host Audit tab: core/default_creds.py + data/default_creds.json (fingerprint match only),
         core/tls_audit.py (testssl.sh --jsonfile / sslyze --json_out -> TlsIssue), core/snmp_audit.py
         (snmpget GET of system-group OIDs), host_audits table (migration 3), results feed assess()
+- [x] 6b. One-click remediation (core/remediation.py): local apt --only-upgrade / stop the systemd
+        unit on a port (protected units refused), SSH-in-terminal or copy for remote hosts,
+        open admin page (gateway for Wi-Fi), re-scan to verify; Event.REMEDIATION in audit log
 - [ ] 7. Metasploit module cross-reference (module names only)
 - [ ] 8. History diff ("What Changed") + scheduler
 - [ ] 9. Report export (HTML, optional PDF via weasyprint). Audit log viewer is already done.

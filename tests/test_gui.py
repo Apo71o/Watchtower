@@ -276,3 +276,21 @@ def test_host_audit_refuses_out_of_scope(ctx, monkeypatch):
     tab.host_input.setText("10.9.9.9")
     tab._add_host()
     assert shown and "authorized" in shown[0] and tab.host_list.count() == 0
+
+
+def test_findings_fix_buttons(ctx):
+    from watchtower.gui.tabs.findings_tab import FindingsTab
+    xml = (FX / "nmap_lab.xml").read_text().replace("192.168.56.101", "127.0.0.1")
+    sid = ctx.scans.start("nmap", "127.0.0.1", "nmap -sV 127.0.0.1")
+    ctx.scans.finish(sid, 0, xml)
+    tab = FindingsTab(ctx)
+    row = next(r for r in range(tab.table.rowCount()) if tab.table.item(r, 4).text() == "CVE-2024-6387")
+    tab.table.selectRow(row)
+    labels = [a.label for a in tab.fix_actions]
+    assert "Install security updates for openssh-server" in labels and "Re-scan to verify" in labels
+    assert "this machine" in tab.fix_label.text() and not tab.fix_bar.isHidden()
+    got = []
+    ctx.bus.request_scan.connect(got.append)
+    tab._apply_fix(next(a for a in tab.fix_actions if a.kind == "rescan"),
+                   next(f for f in tab.shown if f.cve_id == "CVE-2024-6387"))
+    assert got == ["127.0.0.1"] and ctx.audit.entries()[0].event == "remediation"

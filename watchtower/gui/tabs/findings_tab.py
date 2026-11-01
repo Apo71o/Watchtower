@@ -1,13 +1,17 @@
 from __future__ import annotations
 
-from PySide6.QtCore import Qt
-from PySide6.QtGui import QBrush, QColor
+import getpass
+
+from PySide6.QtCore import Qt, QUrl
+from PySide6.QtGui import QBrush, QColor, QDesktopServices, QGuiApplication
 from PySide6.QtWidgets import (
     QCheckBox,
     QComboBox,
     QHBoxLayout,
     QHeaderView,
+    QInputDialog,
     QLabel,
+    QMessageBox,
     QPushButton,
     QSplitter,
     QTableWidget,
@@ -17,10 +21,13 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from watchtower.core import attck_mapping
+from watchtower.core import attck_mapping, deps, interfaces, remediation
 from watchtower.core.assessment import Assessment, assess
 from watchtower.core.findings_engine import SEV_RANK, SEVERITIES, Finding
+from watchtower.core.platform_utils import is_linux
 from watchtower.gui.context import AppContext
+from watchtower.gui.run_dialog import RunPlanDialog
+from watchtower.storage.audit_log import Event
 
 SEV_COLORS = {"Critical": "#b71c1c", "High": "#e53935", "Medium": "#ef6c00", "Low": "#f9a825", "Info": "#757575"}
 FCOLS = ["Severity", "Device", "Finding", "Port / service", "CVE", "CVSS", "ATT&CK"]
@@ -117,9 +124,22 @@ class FindingsTab(QWidget):
         self.detail.setPlaceholderText(
             "Select a finding to see the details, the technique explained, and how to fix it.")
 
+        self.fix_bar = QWidget()
+        self.fix_layout = QHBoxLayout(self.fix_bar)
+        self.fix_layout.setContentsMargins(0, 0, 0, 0)
+        self.fix_label = QLabel("<b>Fix:</b>")
+        self.fix_bar.setVisible(False)
+        detail_box = QWidget()
+        dl = QVBoxLayout(detail_box)
+        dl.setContentsMargins(0, 0, 0, 0)
+        dl.addWidget(self.fix_bar)
+        dl.addWidget(self.detail)
+        self._local_addrs: list[str] | None = None
+        self._gateway: str | None = None
+
         right = QSplitter(Qt.Orientation.Vertical)
         right.addWidget(self.table)
-        right.addWidget(self.detail)
+        right.addWidget(detail_box)
         right.setStretchFactor(0, 1)
         right.setStretchFactor(1, 1)
         split = QSplitter()
@@ -210,7 +230,87 @@ class FindingsTab(QWidget):
                     return
         self._show_device_or_hint()
 
+    # ---- one-click fixes ----
+    def _network_facts(self):
+        """Local IPs and default gateway, looked up once (read-only `ip` commands, logged)."""
+        if self._local_addrs is None:
+            self._local_addrs = []
+            if is_linux():
+                addrs = interfaces.local_addresses(self.ctx.runner)
+                self._local_addrs = [a for lst in addrs.values() for a in lst]
+                ip = deps.find_binary("ip")
+                if ip:
+                    res = self.ctx.runner.run([ip, "route", "show", "default"], purpose="find default gateway",
+                                              timeout=10)
+                    self._gateway = remediation.gateway_from_ip_route(res.stdout)
+        return self._local_addrs, self._gateway
+
+    def _show_fixes(self, f: Finding):
+        while self.fix_layout.count():
+            w = self.fix_layout.takeAt(0).widget()
+            if w and w is not self.fix_label:
+                w.deleteLater()
+        addrs, gw = self._network_facts()
+        local = remediation.is_local(f.device, addrs)
+        self.fix_actions = remediation.fixes_for(f, local, gateway=gw)
+        self.fix_layout.addWidget(self.fix_label)
+        for act in self.fix_actions:
+            b = QPushButton(act.label)
+            b.setToolTip(act.description)
+            b.clicked.connect(lambda _=False, a=act, fi=f: self._apply_fix(a, fi))
+            if act.kind == "local" and not is_linux():
+                b.setEnabled(False)
+                b.setToolTip("Automatic local fixes are available on Debian/Ubuntu.")
+            self.fix_layout.addWidget(b)
+        self.fix_layout.addStretch()
+        self.fix_bar.setVisible(bool(self.fix_actions))
+        if local:
+            self.fix_label.setText("<b>Fix (this machine):</b>")
+        else:
+            self.fix_label.setText("<b>Fix:</b>")
+
+    def _apply_fix(self, act, f: Finding):
+        self.ctx.audit.append(Event.REMEDIATION, target=f.device,
+                              detail={"finding": f.title, "action": act.label, "kind": act.kind})
+        if act.kind == "local":
+            dlg = RunPlanDialog(self.ctx, act.label, act.description, act.plan, self)
+            dlg.exec()
+            self._offer_rescan(f)
+        elif act.kind == "copy":
+            QGuiApplication.clipboard().setText("\n".join(act.commands))
+            QMessageBox.information(self, "Copied", f"Commands to run on {f.device} (as a user with sudo):\n\n"
+                                    + "\n".join(act.commands))
+        elif act.kind == "ssh":
+            user, ok = QInputDialog.getText(self, "Run via SSH", f"SSH user name on {f.device}:",
+                                            text=getpass.getuser())
+            if not ok or not user:
+                return
+            try:
+                argv = remediation.ssh_terminal_argv(user.strip(), f.device, act.commands)
+            except ValueError as exc:
+                QMessageBox.warning(self, "SSH", str(exc))
+                return
+            if argv is None:
+                QMessageBox.warning(self, "SSH", "No terminal emulator found. Use Copy fix commands instead.")
+                return
+            msg = (f"This opens a terminal and runs, on {f.device} as {user}:\n\n" + "\n".join(act.commands)
+                   + "\n\nYou'll be asked for the SSH login and the sudo password there.")
+            if QMessageBox.question(self, "Run via SSH", msg) != QMessageBox.StandardButton.Yes:
+                self.ctx.audit.append(Event.DECLINED, target=f.device, detail={"action": act.label})
+                return
+            self.ctx.runner.spawn(argv, purpose=f"remediation over SSH: {f.title}")
+        elif act.kind == "open_url":
+            QDesktopServices.openUrl(QUrl(act.url))
+        elif act.kind == "rescan":
+            self.ctx.bus.request_scan.emit(f.device)
+
+    def _offer_rescan(self, f: Finding):
+        if QMessageBox.question(self, "Verify", f"Re-scan {f.device} now to check the fix?") \
+                == QMessageBox.StandardButton.Yes:
+            self.ctx.bus.request_scan.emit(f.device)
+
     def _show_device_or_hint(self):
+        self.fix_bar.setVisible(False)
         a = self.assessment
         if a and self.device_filter:
             self.detail.setMarkdown(device_markdown(a, self.device_filter))
@@ -227,10 +327,29 @@ class FindingsTab(QWidget):
             return
         f = self.shown[self.table.item(rows[0].row(), 0).data(Qt.ItemDataRole.UserRole)]
         self._selected_key = f.key
-        md = finding_markdown(f)
+        self._show_fixes(f)
+        md = finding_markdown(f) + fix_markdown(self.fix_actions)
         if self.assessment:
             md += "\n\n---\n\n" + device_markdown(self.assessment, f.device, exclude=f.key)
         self.detail.setMarkdown(md)
+
+
+def fix_markdown(actions) -> str:
+    rows = [a for a in actions if a.kind in ("local", "ssh", "copy", "open_url")]
+    if not rows:
+        return ""
+    lines = ["", "### One-click fix", ""]
+    seen_cmds = False
+    for a in rows:
+        lines.append(f"- **{a.label}**: {a.description}")
+        if a.kind == "local" and a.plan:
+            lines += ["", "  Runs as root on this machine:", ""]
+            lines += [f"  `{st.script}`" for st in a.plan.steps]
+            lines.append("")
+        elif a.kind in ("ssh", "copy") and not seen_cmds:
+            seen_cmds = True
+            lines += ["", "  Commands for the host:", ""] + [f"  `{c}`" for c in a.commands] + [""]
+    return "\n".join(lines)
 
 
 def finding_markdown(f: Finding) -> str:

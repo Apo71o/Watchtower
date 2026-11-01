@@ -43,6 +43,7 @@ class Finding:
     patched: bool = False        # fixed by a distro security update (excluded from risk score)
     cve_info: dict = field(default_factory=dict)   # dataset entry: cwe, disclosed, fixed_in, distro_fixes, ...
     patch_check: dict = field(default_factory=dict)  # distro/revision detection + verdict (see distro_patch_status)
+    product: str = ""            # nmap product name of the affected service (for remediation)
 
     @property
     def key(self) -> str:
@@ -301,7 +302,7 @@ def nse_findings(device: str, label: str, port: Port | None, scripts) -> list[Fi
             service=_service_label(port) if port else "", port=f"{port.portid}/{port.protocol}" if port else "",
             cve_id=", ".join(cves), cvss=cvss, attck=["T1210"],
             confidence="probable (nmap: likely vulnerable)" if likely else "confirmed by nmap script",
-            weight=SEV_WEIGHT.get(sev, 0), source=f"nmap NSE: {s.id}"))
+            weight=SEV_WEIGHT.get(sev, 0), source=f"nmap NSE: {s.id}", product=port.product if port else ""))
     return out
 
 
@@ -318,7 +319,7 @@ def host_findings(host: Host) -> list[Finding]:
                 description=e["description"], remediation=e["remediation"], service=_service_label(p),
                 port=f"{p.portid}/{p.protocol}", version=p.version, cve_id=e["cve"], cvss=e["cvss"],
                 attck=["T1190", "T1210"], confidence="probable (version match)",
-                weight=SEV_WEIGHT[sev], source="dataset", cve_info=e, patch_check=check)
+                weight=SEV_WEIGHT[sev], source="dataset", cve_info=e, patch_check=check, product=p.product)
             if check["verdict"] == "patched":
                 mark_patched(f)
             elif check["verdict"] == "vulnerable":
@@ -336,7 +337,7 @@ def host_findings(host: Host) -> list[Finding]:
                     device=dev, device_label=label, kind="exposure", title=r.title, severity=r.severity,
                     description=r.description, remediation=r.remediation, service=_service_label(p),
                     port=f"{p.portid}/{p.protocol}", attck=list(r.attck), weight=SEV_WEIGHT[r.severity],
-                    source="rule"))
+                    source="rule", product=p.product))
         out += nse_findings(dev, label, p, p.scripts)
     out += nse_findings(dev, label, None, host.scripts)
     if len(open_ports) > 25:

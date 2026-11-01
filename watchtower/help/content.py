@@ -95,6 +95,18 @@ also explain how the attack technique works.
 - **nmap vuln scripts:** anything a `--script vuln` run reported as VULNERABLE.
 - **Wi-Fi advisor:** encryption type, WPS, default or hidden SSID.
 
+**One-click fixes:** select a finding and use the **Fix** buttons above its details:
+- *This machine* (where Watchtower runs): install the security update for the
+  affected package, or stop and disable the service on a risky port. The exact
+  commands are shown first, run as root after your password, and the output
+  includes how to undo it.
+- *Another Linux host you administer*: **Run fix on host via SSH** opens a
+  terminal running the same commands over your SSH login, or **Copy fix
+  commands** to paste yourself.
+- *Routers, cameras, printers*: **Open admin page**, then follow "How to fix it".
+- **Re-scan to verify** reruns the scan for that host.
+Every fix is recorded in the audit log.
+
 **Top risks** ranks each device 0-100: 6 × its worst CVSS score, plus
 weights for its findings (severity, or the Wi-Fi weakness), plus 1 per open
 port. Click a device to filter the list and see everything known about it.

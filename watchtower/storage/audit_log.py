@@ -27,6 +27,7 @@ class Event(StrEnum):
     SCOPE_CHANGE = "scope_change"        # network/host marked (un)authorized
     APP_START = "app_start"
     NETWORK_REQUEST = "network_request"  # outbound HTTP (NVD only, when enabled)
+    REMEDIATION = "remediation"          # user applied / launched a fix for a finding
 
 
 @dataclass
