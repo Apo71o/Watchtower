@@ -1,0 +1,49 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "watchtower"
+dynamic = ["version"]
+description = "Local, reporting-only network / Wi-Fi security audit GUI for authorized home-lab use"
+readme = "README.md"
+requires-python = ">=3.11"
+license = { text = "MIT" }
+dependencies = [
+    "PySide6>=6.6",
+    "requests>=2.31",
+]
+
+[project.optional-dependencies]
+tls = ["sslyze>=6.0"]
+pdf = ["weasyprint>=60"]
+dev = ["pytest>=8", "ruff>=0.5"]
+
+[project.scripts]
+watchtower = "watchtower.app:main"
+
+[project.gui-scripts]
+watchtower-gui = "watchtower.app:main"
+
+[tool.setuptools.dynamic]
+version = { attr = "watchtower.__version__" }
+
+[tool.setuptools.packages.find]
+include = ["watchtower*"]
+
+[tool.setuptools.package-data]
+watchtower = ["data/*.json", "help/*.md"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+
+[tool.ruff]
+line-length = 120
+target-version = "py311"
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "B", "UP"]
+ignore = ["UP017"]  # keep timezone.utc for readability
+
+[tool.ruff.lint.per-file-ignores]
+"tests/*" = ["E402"]

@@ -1,0 +1,8 @@
+[Desktop Entry]
+Type=Application
+Name=Watchtower
+Comment=Local network / Wi-Fi security audit (reporting only)
+Exec=@EXEC@
+Icon=network-wireless
+Terminal=false
+Categories=Network;Security;

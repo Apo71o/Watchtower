@@ -1,0 +1,7 @@
+# Python-side dependencies only. Everything else (nmap, airodump-ng, net-snmp,
+# testssl.sh, Metasploit) is a system binary called via subprocess; see INSTALL.md.
+PySide6>=6.6
+requests>=2.31
+# Optional:
+# sslyze>=6.0      # TLS audit backend (alternative: apt install testssl.sh)
+# weasyprint>=60   # PDF report export
