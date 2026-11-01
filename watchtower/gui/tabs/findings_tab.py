@@ -21,10 +21,21 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from watchtower.core import attck_mapping, deps, exploit_xref, interfaces, nvd, remediation
+from watchtower.core import (
+    attck_mapping,
+    deps,
+    domain_audit,
+    exploit_xref,
+    header_audit,
+    interfaces,
+    nvd,
+    remediation,
+    subdomain_enum,
+)
 from watchtower.core.assessment import Assessment, assess
 from watchtower.core.findings_engine import SEV_RANK, SEVERITIES, Finding, latest_hosts
 from watchtower.core.platform_utils import data_dir, is_linux
+from watchtower.core.risk_scoring import KIND_LABEL
 from watchtower.gui.context import AppContext
 from watchtower.gui.run_dialog import RunPlanDialog
 from watchtower.gui.worker import run_in_background
@@ -234,15 +245,14 @@ class FindingsTab(QWidget):
         c = a.counts()
         parts = [f"<span style='color:{SEV_COLORS[s]}'><b>{c[s]}</b> {s}</span>" for s in SEVERITIES if c[s]]
         self.summary.setText(
-            f"{len(a.findings)} finding(s) across {a.hosts_assessed} host(s) and {a.networks_assessed} "
-            f"Wi-Fi network(s)" + (": " + " · ".join(parts) if parts else
+            f"{len(a.findings)} finding(s) across {a.scope_summary()}" + (": " + " · ".join(parts) if parts else
                                    ". Run a scan or mark networks Authorized to see findings."))
         self.risks.setSortingEnabled(False)
         self.risks.setRowCount(len(a.risks))
         for r, d in enumerate(a.risks):
             color = SEV_COLORS[d.worst] if d.findings else None
             vals = [_sitem(d.score, d.score, color, bold=True), _item(d.label),
-                    _item("Wi-Fi" if d.kind == "wifi" else "Host"), _sitem(len(d.findings), len(d.findings)),
+                    _item(KIND_LABEL.get(d.kind, "Host")), _sitem(len(d.findings), len(d.findings)),
                     _sitem(d.worst if d.findings else "-", SEV_RANK[d.worst], color)]
             vals[1].setData(Qt.ItemDataRole.UserRole, d.device)
             vals[1].setToolTip(f"{d.open_ports} open port(s)" if d.kind == "host" else d.device)
@@ -583,6 +593,38 @@ def device_markdown(a: Assessment, device: str, exclude: str | None = None) -> s
             lines += [f"| {p.portid}/{p.protocol} | {_cell(p.service + (' (' + p.tunnel + ')' if p.tunnel else ''))} "
                       f"| {_cell(p.version_string)} |" for p in ports]
             lines.append("")
+    elif device in a.web:
+        lines += [f"## Web: {device}", ""]
+        rows = a.web[device]
+        h = rows.get("headers")
+        if h:
+            snap, _issues = header_audit.result_from_json(h["result_json"])
+            if snap:
+                lines += _table([
+                    ("Header audit", (h.get("finished") or "")[:19].replace("T", " ") + " UTC"),
+                    ("Final URL", snap.final_url), ("HTTP status", snap.status or snap.error),
+                    ("Redirects", " → ".join(f"{x.status} {x.location}" for x in snap.hops)),
+                    ("Note", snap.stopped), ("Server", snap.get("Server") or ""),
+                ])
+        n = rows.get("nikto")
+        if n:
+            lines += _table([("Nikto scan", (n.get("finished") or "")[:19].replace("T", " ") + " UTC"),
+                             ("Command", f"`{n.get('command', '')}`")])
+    elif device in a.domains:
+        lines += [f"## Domain: {device}", ""]
+        e = a.domains[device].get("email")
+        rep = domain_audit.report_from_json(e["result_json"]) if e else None
+        if rep:
+            lines += _table([
+                ("Mail servers (MX)", ", ".join(rep.mx) or "none"), ("SPF", " · ".join(rep.spf) or "none"),
+                ("SPF DNS lookups", domain_audit.lookups_text(rep.spf_lookups)),
+                ("DMARC", " · ".join(rep.dmarc) or "none"),
+                ("DKIM selectors found", ", ".join(sorted(rep.dkim)) or "none of those tried"),
+            ])
+        s = a.domains[device].get("subdomains")
+        if s:
+            lines += _table([("Subdomains found", len(subdomain_enum.subs_from_json(s["result_json"]))),
+                             ("Source", s.get("tool"))])
     else:
         lines += [f"## {device}", ""]
     if risk:

@@ -1,0 +1,14 @@
+HTTP/1.0 200 OK
+Server: Apache/2.4.41 (Ubuntu) 
+Date: Sun, 01 Nov 2026 19:08:45 GMT
+Content-Type: text/html
+X-Powered-By: PHP/7.4.3
+Strict-Transport-Security: max-age=86400
+Content-Security-Policy: default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval' https:
+X-Frame-Options: ALLOW-FROM https://portal.example
+X-Content-Type-Options: nosnif
+Referrer-Policy: unsafe-url
+Set-Cookie: PHPSESSID=abc123; path=/
+Set-Cookie: theme=dark; expires=Wed, 01 Jan 2031 00:00:00 GMT; path=/; HttpOnly
+Set-Cookie: tracking=1; SameSite=None
+

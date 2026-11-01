@@ -1,0 +1,4 @@
+homelab.example (FQDN) --> ns_record --> ns1.dnshost.example (FQDN)
+www.homelab.example (FQDN) --> a_record --> 192.0.2.10 (IPAddress)
+staging.homelab.example (FQDN) --> cname_record --> www.homelab.example (FQDN)
+192.0.2.0/24 (Netblock) --> contains --> 192.0.2.10 (IPAddress)

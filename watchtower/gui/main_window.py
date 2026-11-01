@@ -13,6 +13,7 @@ from watchtower.gui.dependency_check import DependencyDialog
 from watchtower.gui.help_panel import TabPage
 from watchtower.gui.tabs.audit_log_tab import AuditLogTab
 from watchtower.gui.tabs.changes_tab import ChangesTab
+from watchtower.gui.tabs.domain_audit_tab import DomainAuditTab
 from watchtower.gui.tabs.findings_tab import FindingsTab
 from watchtower.gui.tabs.help_tab import HelpTab
 from watchtower.gui.tabs.host_audit_tab import HostAuditTab
@@ -21,6 +22,7 @@ from watchtower.gui.tabs.nearby_tab import NearbyTab
 from watchtower.gui.tabs.password_tab import PasswordTab
 from watchtower.gui.tabs.scan_tab import ScanTab
 from watchtower.gui.tabs.settings_tab import SettingsTab
+from watchtower.gui.tabs.web_audit_tab import WebAuditTab
 from watchtower.storage.settings import DEPS_REVIEWED
 
 
@@ -55,6 +57,10 @@ class MainWindow(QMainWindow):
         self.pages["findings"].help.toggle.setChecked(False)   # the detail pane explains each finding
         self.host_audit_tab = HostAuditTab(ctx)
         add("host_audit", "Host Audit", self.host_audit_tab)
+        self.web_audit_tab = WebAuditTab(ctx)
+        add("web_audit", "Web Audit", self.web_audit_tab)
+        self.domain_audit_tab = DomainAuditTab(ctx)
+        add("domain_audit", "Domain Audit", self.domain_audit_tab)
         self.changes_tab = ChangesTab(ctx)
         add("changes", "What Changed", self.changes_tab)
         self.password_tab = PasswordTab(ctx)

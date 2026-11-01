@@ -7,7 +7,7 @@ import json
 from dataclasses import fields
 from datetime import datetime, timedelta, timezone
 
-from watchtower.core.targets import in_scope, parse_target
+from watchtower.core.targets import domain_covered, in_scope, normalize_domain, parse_target, url_in_scope
 from watchtower.storage.audit_log import AuditLog, Event
 from watchtower.storage.db import Database
 
@@ -132,6 +132,37 @@ class TargetStore:
     def covers(self, target: str) -> bool:
         return in_scope(target, self.values())
 
+    def covers_url(self, url: str) -> bool:
+        """Web Audit scope: the URL's host must be an authorized target."""
+        return url_in_scope(url, self.values())
+
+
+class OwnedDomainStore:
+    """Domains the user declares they own or administer (Domain Audit scope).
+    Covers the domain and its subdomains. Every change is a SCOPE_CHANGE."""
+
+    def __init__(self, db: Database, audit: AuditLog):
+        self.db, self.audit = db, audit
+
+    def values(self) -> list[str]:
+        return [r["domain"] for r in self.db.query("SELECT domain FROM owned_domains ORDER BY domain")]
+
+    def add(self, domain: str, note: str = "") -> bool:
+        domain = normalize_domain(domain)
+        cur = self.db.execute("INSERT OR IGNORE INTO owned_domains(domain, note, added) VALUES (?, ?, ?)",
+                              (domain, note, now()))
+        if cur.rowcount:
+            self.audit.append(Event.SCOPE_CHANGE, target=domain, detail={"owned_domain": "added", "note": note})
+        return bool(cur.rowcount)
+
+    def remove(self, domain: str) -> None:
+        cur = self.db.execute("DELETE FROM owned_domains WHERE domain = ?", (domain,))
+        if cur.rowcount:
+            self.audit.append(Event.SCOPE_CHANGE, target=domain, detail={"owned_domain": "removed"})
+
+    def covers(self, name: str) -> bool:
+        return domain_covered(name, self.values())
+
 
 class HostAuditStore:
     def __init__(self, db: Database):
@@ -146,8 +177,8 @@ class HostAuditStore:
         self.db.execute("UPDATE host_audits SET finished = ?, exit_code = ?, raw_output = ?, result_json = ? "
                         "WHERE id = ?", (now(), exit_code, raw_output, result_json, audit_id))
 
-    def latest(self, host: str | None = None) -> list[dict]:
-        """Newest finished audit per (host, kind, port)."""
+    def latest(self, host: str | None = None, kinds: tuple[str, ...] | None = None) -> list[dict]:
+        """Newest finished audit per (host, kind, port), optionally only these kinds."""
         sql = ("SELECT * FROM host_audits a WHERE finished IS NOT NULL AND id = (SELECT MAX(id) FROM host_audits b "
                "WHERE b.host = a.host AND b.kind = a.kind AND IFNULL(b.port, -1) = IFNULL(a.port, -1) "
                "AND b.finished IS NOT NULL)")
@@ -155,6 +186,9 @@ class HostAuditStore:
         if host:
             sql += " AND host = ?"
             params = (host,)
+        if kinds:
+            sql += f" AND kind IN ({', '.join('?' * len(kinds))})"
+            params = (*params, *kinds)
         return [dict(r) for r in self.db.query(sql + " ORDER BY host, kind, port", params)]
 
 

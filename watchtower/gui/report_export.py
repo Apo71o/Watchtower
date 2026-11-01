@@ -41,7 +41,7 @@ def gather(ctx: AppContext, include_unauthorized_wifi: bool, include_info: bool,
                                                            nmap_runner.parse_xml(scans[0]["raw_output"]))
     commands = []
     for e in reversed(ctx.audit.entries(limit=2000)):
-        if e.event != "command_start" or not e.command:
+        if e.event not in ("command_start", "network_request") or not e.command:
             continue
         try:
             purpose = json.loads(e.detail or "{}").get("purpose", "")
@@ -51,7 +51,8 @@ def gather(ctx: AppContext, include_unauthorized_wifi: bool, include_info: bool,
             continue   # housekeeping, not part of the assessment
         commands.append({"ts": e.ts, "command": e.command, "purpose": purpose})
     nets = [n for n in ctx.networks.all() if n.get("authorized")]
-    return report.ReportInput(a, title, author, ctx.targets.values(), nets, changes, commands[-200:], include_info)
+    return report.ReportInput(a, title, author, ctx.targets.values(), nets, changes, commands[-200:], include_info,
+                              ctx.domains.values())
 
 
 class ExportDialog(QDialog):

@@ -184,6 +184,61 @@ Schedules skip targets you've removed from the authorized list, and
 profiles that need root (e.g. Intense scan) unless nmap has been granted
 capabilities.
 """,
+"web_audit": """
+### Web Audit
+**What it does:** checks the web interfaces you run (router, NAS, home server,
+self-hosted apps) for missing browser protections and known problems. Add a URL
+such as `https://nas.lan:5001/`; its host must be in your authorized targets (if
+it isn't, Watchtower asks before adding it, and logs that scope change).
+
+- **Check headers** (no external tool): one ordinary GET request, like a
+  browser's. It reports whether the site uses HTTPS and the security headers
+  browsers rely on: **HSTS** (always use HTTPS), **Content-Security-Policy**
+  (limits what scripts can run: the safety net against XSS),
+  **X-Frame-Options** / CSP `frame-ancestors` (clickjacking),
+  **X-Content-Type-Options: nosniff**, **Referrer-Policy**, and the **Secure**,
+  **HttpOnly** and **SameSite** flags of every cookie it sets. Redirects are
+  followed only while they stay on authorized hosts. A self-signed certificate
+  is reported, then the headers are read anyway.
+- **Run nikto**: nikto requests thousands of known paths (default files,
+  exposed `.git` / backups / phpinfo, admin pages, outdated server versions).
+  Watchtower runs it **without nikto's `auth` plugin**, which would try default
+  user names and passwords on login prompts, and **without its denial-of-service
+  tests** (`-Plugins "@@DEFAULT;-auth" -Tuning x6`). Nikto doesn't rate its
+  results, so Watchtower rates them from the description. It takes a few
+  minutes and is noisy in the server's logs; that's expected.
+
+Results go to **Findings** (device = the URL) with exact server settings to fix
+each one, count toward the risk score, and appear in the report. Every request
+and command is shown in the Command Console and written to the audit log.
+""",
+"domain_audit": """
+### Domain Audit
+**What it does:** checks a domain you own the way the rest of the internet sees
+it. Add the domain first (Watchtower asks you to confirm you own it, and logs
+it). Nothing here is sent to your own servers.
+
+- **Check DNS records** (SPF / DKIM / DMARC, via dnspython): looks up the public
+  DNS records that let receiving mail servers reject mail **forged** to look like
+  it came from you.
+  - **SPF**: which servers may send as your domain. Checked for a single valid
+    record, a strict ending (`-all`), and the 10-DNS-lookup limit (includes of
+    includes count too).
+  - **DKIM**: the public key that verifies your mail's signatures. DNS can't list
+    keys, so common selector names are tried; add yours (the `s=` value in the
+    DKIM-Signature header of a message you sent). Keys under 2048 bits are flagged.
+  - **DMARC**: what receivers should do when SPF and DKIM both fail
+    (`p=none` only monitors, `quarantine`/`reject` protect) and where to send reports.
+- **Find subdomains** (passive): lists names under your domain that are already
+  public in **Certificate Transparency** logs and passive-DNS data sets, using
+  **subfinder**, **amass** (only builds that still support `enum -passive`) or
+  Watchtower's built-in **crt.sh** query. The names aren't resolved or probed.
+  Names that look like admin, dev or backup systems are highlighted: anyone can
+  see them, so make sure they aren't reachable unless they should be.
+
+The DNS lookups and third-party queries are network requests you start with a
+click; each one is shown in the Command Console and written to the audit log.
+""",
 "passwords": """
 ### Password Tools
 Check your own passwords for strength and exposure. Everything here is
@@ -329,6 +384,35 @@ GLOSSARY: list[tuple[str, str]] = [
  "is better), screen new passwords against breach lists, and do NOT force arbitrary complexity rules "
  "(mixed case/symbols) or periodic expiry — those push people toward predictable patterns. The Strength "
  "Analyzer turns this into a pass/fail checklist."),
+("Security headers (HSTS, CSP, X-Frame-Options)",
+ "HTTP response headers that tell the browser to protect a site's users. **HSTS** makes the browser use HTTPS "
+ "only, defeating SSL stripping. **Content-Security-Policy** lists where scripts may come from, so injected "
+ "script (XSS) doesn't run. **X-Frame-Options** / CSP frame-ancestors stop other sites from framing the page "
+ "(clickjacking). **X-Content-Type-Options: nosniff** stops browsers guessing file types. **Referrer-Policy** "
+ "limits what URL is sent to other sites."),
+("Cookie flags (Secure, HttpOnly, SameSite)",
+ "Attributes on a Set-Cookie header. **Secure**: only sent over HTTPS. **HttpOnly**: page scripts can't read "
+ "it, so XSS can't steal the session. **SameSite=Lax/Strict**: not sent on requests started by other sites, "
+ "which blocks most cross-site request forgery (CSRF)."),
+("SPF / DKIM / DMARC",
+ "Three DNS records that stop others sending email as your domain. **SPF** lists the servers allowed to send "
+ "it. **DKIM** publishes a public key; your mail server signs each message and receivers verify the signature. "
+ "**DMARC** tells receivers what to do when a message passes neither (none / quarantine / reject) and where to "
+ "send reports. All three are needed for real protection against spoofing."),
+("DKIM selector",
+ "The name under which a DKIM key is published: selector._domainkey.example.com. A domain can have several "
+ "(one per mail service). DNS can't list them, so you find yours in the s= tag of the DKIM-Signature header of "
+ "an email you sent."),
+("Certificate Transparency (CT)",
+ "Public, append-only logs of every certificate trusted CAs issue. They let anyone spot a mis-issued "
+ "certificate for their domain, and also reveal every host name you've ever got a certificate for. Passive "
+ "subdomain discovery reads them; using a wildcard certificate or an internal CA keeps internal names out."),
+("Passive reconnaissance",
+ "Collecting information from public third-party sources (CT logs, passive DNS, search engines) without "
+ "sending anything to the target's own systems. Domain Audit's subdomain discovery is passive only."),
+("Nikto",
+ "An open-source web server scanner that requests thousands of known paths and checks for dangerous files, "
+ "outdated software and misconfiguration. Watchtower runs it without its default-login plugin and DoS tests."),
 ("Backported security fix",
  "Ubuntu and Debian freeze a package's upstream version for the life of a release and apply security fixes as "
  "patches, bumping only the package revision: OpenSSH 8.9p1 on Ubuntu 22.04 went from 3ubuntu0.1 to 3ubuntu0.10 "

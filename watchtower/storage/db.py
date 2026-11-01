@@ -143,6 +143,16 @@ MIGRATIONS: list[str] = [
         cves     TEXT NOT NULL                 -- JSON list of parsed CVE summaries
     );
     """,
+    # 6: domains the user owns (Domain Audit scope). Web/domain audit results go in host_audits with
+    #    kind "headers" / "nikto" (host = normalized URL) or "email" / "subdomains" (host = domain).
+    """
+    CREATE TABLE owned_domains (
+        id     INTEGER PRIMARY KEY AUTOINCREMENT,
+        domain TEXT NOT NULL UNIQUE COLLATE NOCASE,
+        note   TEXT,
+        added  TEXT NOT NULL
+    );
+    """,
 ]
 
 

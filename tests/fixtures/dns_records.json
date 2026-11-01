@@ -1,0 +1,128 @@
+{
+ "_about": "HAND-WRITTEN DNS data for tests (the cloud container's DNS returns empty answers, so real records couldn't be captured). Record formats follow RFC 7208 (SPF), RFC 6376 (DKIM) and RFC 7489 (DMARC); the DKIM keys are real RSA public keys generated with `openssl genpkey` (768, 1024, 2048 bits; one 1024-bit key in bare PKCS#1 form). Domains use the reserved .example / example.* names. TXT values are each record's strings already joined, as the resolver returns them.",
+ "records": {
+  "good.example": {
+   "MX": [
+    "10 mx1.mailhost.example.",
+    "20 mx2.mailhost.example."
+   ],
+   "TXT": [
+    "google-site-verification=abc123",
+    "v=spf1 ip4:192.0.2.0/24 include:_spf.mailhost.example -all"
+   ]
+  },
+  "_spf.mailhost.example": {
+   "TXT": [
+    "v=spf1 ip4:198.51.100.0/24 ip6:2001:db8::/32 -all"
+   ]
+  },
+  "_dmarc.good.example": {
+   "TXT": [
+    "v=DMARC1; p=reject; sp=reject; rua=mailto:dmarc@good.example; adkim=s"
+   ]
+  },
+  "selector1._domainkey.good.example": {
+   "TXT": [
+    "v=DKIM1; k=rsa; p=MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEApZk/b+PAjEjGIW/c9d7aPx5UZhiY4HsioRrWoAjWYYpCqDbdcCozwORankZj3ZnxgoPO61k0pDvRuQ0mYWLjWFwfJT8H8bbess2tpWS0l74EB/Mb9W++rz02bhdD2XA2QGim5nGh+NEVkJLfbfE2ocVEkFDNuhZsGRCQSWQYdZZwGMCohT+yXKDmu51eFTAaEu9MBDVs/zOh7IzQV0DR0JtzZhupf3PMpetzi3yTJ30jd/c+MFc3xQ+67YDcyDU0EmZPIGbxmCVbYHPe1tlt08H14C1rGqj2CVanfTZX9bDvUjqm/2e7LNO66gNPA/BK+IchId/xYoo8SU5unqRUtwIDAQAB"
+   ]
+  },
+  "weak.example": {
+   "MX": [
+    "10 mail.weak.example."
+   ],
+   "TXT": [
+    "v=spf1 a mx ptr include:spf1.weak.example include:spf2.weak.example ?all",
+    "v=spf1 include:other.example ~all"
+   ]
+  },
+  "spf1.weak.example": {
+   "TXT": [
+    "v=spf1 include:spf3.weak.example include:spf4.weak.example a mx -all"
+   ]
+  },
+  "spf2.weak.example": {
+   "TXT": [
+    "v=spf1 include:spf5.weak.example a mx exists:%{i}.x.weak.example -all"
+   ]
+  },
+  "spf3.weak.example": {
+   "TXT": [
+    "v=spf1 a mx ip4:203.0.113.0/24 -all"
+   ]
+  },
+  "spf4.weak.example": {
+   "TXT": [
+    "v=spf1 a mx -all"
+   ]
+  },
+  "spf5.weak.example": {
+   "TXT": [
+    "v=spf1 include:nospf.example -all"
+   ]
+  },
+  "nospf.example": {
+   "TXT": [
+    "some unrelated text"
+   ]
+  },
+  "_dmarc.weak.example": {
+   "TXT": [
+    "v=DMARC1; p=none"
+   ]
+  },
+  "default._domainkey.weak.example": {
+   "TXT": [
+    "v=DKIM1; k=rsa; t=y; p=MHwwDQYJKoZIhvcNAQEBBQADawAwaAJhAKeQENa5P8b2L+wW+9Kd/AuNMQHkDMKwTtF8DiwEdcqe6BBPeRAag1dUuYSlJgx43JUuoNpznmayfS4HWNGnkPDnvt6P4yHuCddkxLjGC+I2/JvxKd7vNO/TjcVPZk+vtQIDAQAB"
+   ]
+  },
+  "mail._domainkey.weak.example": {
+   "TXT": [
+    "v=DKIM1; p=MIGJAoGBAN/xLFqxktkTT87ObKFzVPcbpJxwK31ZFIu1by7FW8Uvc3L6YSRqabQxzT3/BGp/NWeHY4TmHC0LA02PHEwmRAf+VIGnDiJGfKFE77ot/Jm4JpfKgoDv24DrBunSQl84QJA4BbvxqxF6DZFpz5bF64lbPqK3p1CrVc/lcokdFOgFAgMBAAE="
+   ]
+  },
+  "old._domainkey.weak.example": {
+   "TXT": [
+    "v=DKIM1; k=rsa; p="
+   ]
+  },
+  "bare.example": {
+   "TXT": [
+    "v=verification-token 42"
+   ]
+  },
+  "parked.example": {
+   "MX": [
+    "0 ."
+   ],
+   "TXT": [
+    "v=spf1 -all"
+   ]
+  },
+  "_dmarc.parked.example": {
+   "TXT": [
+    "v=DMARC1; p=reject;"
+   ]
+  },
+  "open.example": {
+   "MX": [
+    "10 mx.open.example."
+   ],
+   "TXT": [
+    "v=spf1 ip4:192.0.2.300 include +all"
+   ]
+  },
+  "_dmarc.open.example": {
+   "TXT": [
+    "v=DMARC1; p=quarantine; pct=25; sp=none; rua=mailto:d@open.example"
+   ]
+  },
+  "selector2._domainkey.open.example": {
+   "TXT": "SERVFAIL"
+  },
+  "k1._domainkey.open.example": {
+   "TXT": [
+    "v=DKIM1; k=rsa; p=MIGfMA0GCSqGSIb3DQEBAQUAA4GNADCBiQKBgQDf8SxasZLZE0/Ozmyhc1T3G6SccCt9WRSLtW8uxVvFL3Ny+mEkamm0Mc09/wRqfzVnh2OE5hwtCwNNjxxMJkQH/lSBpw4iRnyhRO+6LfyZuCaXyoKA79uA6wbp0kJfOECQOAW78asReg2Rac+WxeuJWz6it6dQq1XP5XKJHRToBQIDAQAB"
+   ]
+  }
+ }
+}

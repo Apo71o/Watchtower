@@ -24,6 +24,16 @@ TECHNIQUES: dict[str, tuple[str, str]] = {
     "T1602.001": ("Data from Configuration Repository: SNMP (MIB Dump)", "Collection"),
     "T1610": ("Deploy Container", "Execution"),
     "T1595.002": ("Active Scanning: Vulnerability Scanning", "Reconnaissance"),
+    "T1595.003": ("Active Scanning: Wordlist Scanning", "Reconnaissance"),
+    "T1592": ("Gather Victim Host Information", "Reconnaissance"),
+    "T1592.002": ("Gather Victim Host Information: Software", "Reconnaissance"),
+    "T1590.002": ("Gather Victim Network Information: DNS", "Reconnaissance"),
+    "T1596.003": ("Search Open Technical Databases: Digital Certificates", "Reconnaissance"),
+    "T1566": ("Phishing", "Initial Access"),
+    "T1656": ("Impersonation", "Defense Evasion"),
+    "T1539": ("Steal Web Session Cookie", "Credential Access"),
+    "T1185": ("Browser Session Hijacking", "Collection"),
+    "T1189": ("Drive-by Compromise", "Initial Access"),
 }
 
 

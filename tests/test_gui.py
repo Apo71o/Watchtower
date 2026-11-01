@@ -52,7 +52,7 @@ def test_main_window_builds_without_startup_gate(ctx):
     win = MainWindow(ctx)
     labels = [win.tabs.tabText(i) for i in range(win.tabs.count())]
     assert labels == ["Interfaces", "Nearby Networks", "Scan a Target", "Findings", "Host Audit",
-                      "What Changed", "Password Tools", "Audit Log", "Help", "Settings"]
+                      "Web Audit", "Domain Audit", "What Changed", "Password Tools", "Audit Log", "Help", "Settings"]
     assert not hasattr(ctx, "authorized")
     ctx.runner.run([sys.executable, "-c", "pass"], purpose="smoke")
     QApplication.processEvents()
@@ -431,3 +431,97 @@ def test_breach_panel_offline(ctx, tmp_path):
     panel._check_single()
     assert wait_for(lambda: not panel._running, 10)
     assert "500" in panel.single_result.text()
+
+
+def _http_server():
+    from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+
+    class H(BaseHTTPRequestHandler):
+        def do_GET(self):
+            self.send_response(200)
+            self.send_header("Content-Type", "text/html")
+            self.send_header("Set-Cookie", "session=1; Path=/")
+            self.end_headers()
+            self.wfile.write(b"<html></html>")
+
+        def log_message(self, *a):
+            pass
+    import threading
+    srv = ThreadingHTTPServer(("127.0.0.1", 0), H)
+    threading.Thread(target=srv.serve_forever, daemon=True).start()
+    return srv
+
+
+def test_web_audit_tab_scope_and_header_check(ctx, monkeypatch):
+    import requests
+
+    from watchtower.gui.tabs import web_audit_tab
+    from watchtower.gui.tabs.findings_tab import FindingsTab
+    from watchtower.gui.tabs.host_audit_tab import HostAuditTab
+    srv = _http_server()
+    port = srv.server_address[1]
+
+    class NoProxySession(requests.Session):
+        def __init__(self):
+            super().__init__()
+            self.trust_env = False
+    monkeypatch.setattr(requests, "Session", NoProxySession)
+    try:
+        tab = web_audit_tab.WebAuditTab(ctx)
+        tab.url_input.setText(f"http://127.0.0.1:{port}/")
+        assert not tab.add_url(confirm=lambda: False)              # declined: nothing authorized
+        assert not ctx.targets.covers("127.0.0.1") and tab.url_list.count() == 0
+        assert tab.add_url(confirm=lambda: True)
+        assert ctx.targets.covers("127.0.0.1")
+        assert any(e.event == "scope_change" and e.target == "127.0.0.1" for e in ctx.audit.entries(limit=20))
+        assert tab.current_url() == f"http://127.0.0.1:{port}/" and tab.headers_btn.isEnabled()
+        tab.run_headers()
+        assert wait_for(lambda: tab.cancel_event is None, 30)
+        text = tab.results.toPlainText()
+        assert "Site served over plain HTTP" in text and "HttpOnly" in text, text
+        net = [e for e in ctx.audit.entries(limit=50) if e.event == "network_request"]
+        assert net and net[0].command == f"GET http://127.0.0.1:{port}/"
+        # results flow into Findings as a Web device; Host Audit ignores URL rows
+        ft = FindingsTab(ctx)
+        ft.refresh()
+        assert any(r.kind == "web" for r in ft.assessment.risks)
+        assert "1 web URL(s)" in ft.summary.text()
+        HostAuditTab(ctx)
+        # out of scope again -> buttons off
+        ctx.targets.remove("127.0.0.1")
+        ctx.bus.targets_changed.emit()
+        assert not tab.headers_btn.isEnabled()
+    finally:
+        srv.shutdown()
+        srv.server_close()
+
+
+def test_domain_audit_tab_owned_domains_and_dns(ctx):
+    import json
+
+    from watchtower.core import domain_audit
+    from watchtower.gui.tabs.domain_audit_tab import DomainAuditTab
+    records = json.loads((FX / "dns_records.json").read_text())["records"]
+    tab = DomainAuditTab(ctx)
+    tab.domain_input.setText("weak.example")
+    assert not tab.add_domain(confirm=lambda: False) and ctx.domains.values() == []
+    assert tab.add_domain(confirm=lambda: True) and ctx.domains.values() == ["weak.example"]
+    assert tab.current_domain() == "weak.example"
+    labels = [tab.sub_backend.itemData(i) for i in range(tab.sub_backend.count())]
+    assert labels == ["subfinder", "amass", "crt.sh"] and tab.sub_backend.model().item(2).isEnabled()
+
+    def factory(on_query):
+        base = domain_audit.dict_resolver(records)
+
+        def resolve(name, rdtype):
+            on_query(name, rdtype)
+            return base(name, rdtype)
+        return resolve
+    tab.run_mail(resolver_factory=factory)
+    assert wait_for(lambda: tab.cancel_event is None, 30)
+    text = tab.results.toPlainText()
+    assert "DMARC policy is p=none" in text and "768 bits" in text, text
+    dns_log = [e for e in ctx.audit.entries(limit=100) if e.event == "network_request"]
+    assert any(e.command == "DNS TXT _dmarc.weak.example" for e in dns_log)
+    row = ctx.audits.latest("weak.example")[0]
+    assert row["kind"] == "email"

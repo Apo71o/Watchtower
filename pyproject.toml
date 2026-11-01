@@ -12,6 +12,7 @@ license = { text = "MIT" }
 dependencies = [
     "PySide6>=6.6",
     "requests>=2.31",
+    "dnspython>=2.4",
 ]
 
 [project.optional-dependencies]

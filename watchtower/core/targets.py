@@ -101,3 +101,84 @@ def looks_like_target(token: str) -> bool:
         return True
     except ValueError:
         return False
+
+
+# ---- web URLs and owned domains (Web Audit / Domain Audit) ----
+
+@dataclass(frozen=True)
+class WebUrl:
+    url: str          # normalized: scheme://host[:port]/path (default port dropped, no fragment)
+    scheme: str       # "http" | "https"
+    host: str         # lower-case host name or IP (no brackets)
+    port: int
+
+    @property
+    def origin(self) -> str:
+        return self.url.split("/", 3)[0] + "//" + self.url.split("/", 3)[2]
+
+
+def parse_url(text: str) -> WebUrl:
+    """Validate an http(s) URL for a single host. A bare host gets https://.
+    Raise ValueError for anything else (other schemes, credentials in the URL,
+    ranges/CIDRs as host)."""
+    from urllib.parse import urlsplit, urlunsplit
+
+    t = text.strip()
+    if not t or any(c.isspace() for c in t):
+        raise ValueError(f"not a URL: {text!r}")
+    if "://" not in t:
+        t = "https://" + t
+    parts = urlsplit(t)
+    scheme = parts.scheme.lower()
+    if scheme not in ("http", "https"):
+        raise ValueError(f"only http:// and https:// URLs are supported: {text!r}")
+    if parts.username or parts.password:
+        raise ValueError("remove the user name / password from the URL")
+    host = (parts.hostname or "").lower().rstrip(".")
+    try:
+        port = parts.port or (443 if scheme == "https" else 80)
+    except ValueError as exc:
+        raise ValueError(f"invalid port in {text!r}") from exc
+    tgt = parse_target(host) if host else None
+    if tgt is None or tgt.size() != 1:
+        raise ValueError(f"the URL must name one host: {text!r}")
+    netloc = f"[{host}]" if ":" in host else host
+    if port != (443 if scheme == "https" else 80):
+        netloc += f":{port}"
+    return WebUrl(urlunsplit((scheme, netloc, parts.path or "/", parts.query, "")), scheme, host, port)
+
+
+def url_in_scope(url: str | WebUrl, authorized: list[str]) -> bool:
+    """A URL is in scope when its host is covered by the authorized-target list."""
+    try:
+        u = url if isinstance(url, WebUrl) else parse_url(url)
+        return in_scope(u.host, authorized)
+    except ValueError:
+        return False
+
+
+def normalize_domain(text: str) -> str:
+    """'Example.COM.' -> 'example.com'. Must be a registrable-looking DNS name
+    with at least one dot (not an IP, not a single label)."""
+    d = text.strip().lower().rstrip(".")
+    if d.startswith("*."):
+        d = d[2:]
+    if not _HOST_RE.match(d) or "." not in d or re.fullmatch(r"[\d.]+", d) or ":" in d:
+        raise ValueError(f"not a domain name: {text!r}")
+    return d
+
+
+def domain_covered(name: str, owned: list[str]) -> bool:
+    """True if `name` equals an owned domain or is a subdomain of one."""
+    try:
+        n = normalize_domain(name)
+    except ValueError:
+        return False
+    for o in owned:
+        try:
+            o = normalize_domain(o)
+        except ValueError:
+            continue
+        if n == o or n.endswith("." + o):
+            return True
+    return False

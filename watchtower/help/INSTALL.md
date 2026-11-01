@@ -25,8 +25,11 @@ Then install the security tools you want (or let the Dependency Check screen do 
 after showing you the command):
 
 ```bash
-sudo apt install nmap iw aircrack-ng network-manager snmp testssl.sh
+sudo apt install nmap iw aircrack-ng network-manager snmp testssl.sh nikto
 ```
+
+Passive subdomain discovery also works with no tool at all (built-in crt.sh
+search); subfinder or amass add more data sources.
 
 | Tool | Package | Used for |
 |---|---|---|
@@ -38,6 +41,10 @@ sudo apt install nmap iw aircrack-ng network-manager snmp testssl.sh
 | sslyze *or* testssl.sh | `testssl.sh` (apt) / sslyze: the installer button runs `pip install sslyze` inside Watchtower's environment | TLS audit in Host Audit (optional; either one is enough) |
 | snmpget/snmpwalk | `snmp` | Read-only SNMP community-string check (optional) |
 | Metasploit | [Rapid7 installer](https://docs.metasploit.com/docs/using-metasploit/getting-started/nightly-installers.html) | Module-name cross-reference only (optional) |
+| nikto | `nikto` | Web server scan in Web Audit (optional; run without its default-login plugin and DoS tests) |
+| dnspython | Python package (installed with Watchtower; `pip install dnspython` otherwise) | SPF / DKIM / DMARC lookups in Domain Audit |
+| subfinder | [release binary](https://github.com/projectdiscovery/subfinder/releases) (not packaged by Ubuntu) | Passive subdomain discovery in Domain Audit (optional) |
+| amass | `amass` where packaged, or [release binary](https://github.com/owasp-amass/amass/releases) | Alternative passive subdomain source (optional; only builds with `enum -passive` are used) |
 | weasyprint | `weasyprint` | PDF report export (optional) |
 
 ### Privileges

@@ -13,12 +13,14 @@ from dataclasses import dataclass, field
 
 from watchtower.core.findings_engine import SEV_RANK, Finding
 
+KIND_LABEL = {"host": "Host", "wifi": "Wi-Fi", "web": "Web", "domain": "Domain"}
+
 
 @dataclass
 class DeviceRisk:
     device: str
     label: str
-    kind: str                 # "host" | "wifi"
+    kind: str                 # "host" | "wifi" | "web" | "domain" (see KIND_LABEL)
     score: int
     worst: str
     findings: list[Finding] = field(default_factory=list)

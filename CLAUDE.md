@@ -39,8 +39,12 @@ the "User decisions" section below wins over the spec.
 4. **No network calls** except: NVD lookups behind the Settings toggle (off by default); and the
    HaveIBeenPwned "Pwned Passwords" range API, which is user-initiated (clicking Check) and sends
    only the first 5 hex chars of a password's SHA-1 (k-anonymity) — the password and full hash never
-   leave the machine. Both are logged as `Event.NETWORK_REQUEST`. Breach checking also has a fully
-   offline mode (local HIBP hash file). Password strength analysis (zxcvbn) is entirely local.
+   leave the machine. Breach checking also has a fully offline mode (local HIBP hash file). Password
+   strength analysis (zxcvbn) is entirely local. Domain Audit (user-initiated, owned domains only):
+   public DNS TXT/MX lookups via the system resolver, and passive subdomain sources (subfinder/amass
+   query third-party data sets; crt.sh is one HTTPS GET). Web Audit's header check is an HTTP GET to
+   an authorized URL (same scope rule as nmap). All of these are logged as `Event.NETWORK_REQUEST`
+   (via `AppContext.log_network`) or go through CommandRunner.
 5. **Ask the user** before touching system Wi-Fi interface settings (monitor
    mode) or running anything with sudo/pkexec. Show the command, then confirm.
 6. **Read-only SNMP:** GET/WALK only, never SET.
@@ -59,6 +63,11 @@ watchtower/
   core/interfaces.py     iw dev / iw list / ip -j addr parsing, set_mode_plan() (monitor <-> managed)
   core/wifi_scan.py      nmcli / iw scan / iwlist / airodump-ng CSV parsers, managed_scan(), airodump_argv()
   core/nmap_runner.py    PROFILES, build() (scope-checks every target incl. extra args), parse_xml()
+  core/targets.py        also parse_url()/url_in_scope() (Web Audit) and normalize_domain()/domain_covered()
+  core/header_audit.py   fetch() (manual in-scope redirects, unverified retry on TLS error), analyze() -> HeaderIssue
+  core/web_scanner.py    nikto argv (-Plugins "@@DEFAULT;-auth" -Tuning x6), XML parser, description-based rating
+  core/domain_audit.py   SPF/DKIM/DMARC: pure analysis over a resolve(name, rdtype) callable; dns_resolver() (dnspython)
+  core/subdomain_enum.py passive only: subfinder / amass enum -passive (refused if absent) / crt.sh; parsers
   storage/db.py          SQLite + MIGRATIONS list (append new entries, never edit old ones)
   storage/audit_log.py   append-only log (DB triggers block UPDATE/DELETE); Event enum
   storage/settings.py    JSON key/value settings + well-known keys
@@ -205,9 +214,34 @@ Same rules: authorized/own targets only, ownership gate for new target types, ev
       downgrade mid-response. Per the user: SKIP for now, finish the rest, and add this panel later
       on Opus 4.8. hash_cracker.py core is built + tested; a panel would just call build()/show_argv()
       and display/copy the command (no in-app execution).
-- [ ] P2-2..7: Web Audit (header_audit.py no-tool + web_scanner.py nikto), Domain Audit
-      (domain_audit.py SPF/DKIM/DMARC via dnspython; subdomain_enum.py passive subfinder/amass),
-      then wire web/domain findings into assess()/report (they have a URL/domain as the "device").
+- [x] P2-3/4 Web Audit tab (gui/tabs/web_audit_tab.py, after Host Audit): URL list; a URL is in scope when
+      its host is an authorized target (adding an out-of-scope URL asks, then TargetStore.add -> SCOPE_CHANGE).
+      core/header_audit.py (requests GET, allow_redirects=False, follows redirects only to in-scope hosts,
+      keeps repeated Set-Cookie apart via resp.raw.headers; HSTS/CSP/framing/nosniff/Referrer-Policy/cookie
+      flags/version disclosure). core/web_scanner.py wraps nikto with `-Plugins "@@DEFAULT;-auth"` (nikto's
+      auth plugin TRIES DEFAULT LOGINS: non-negotiable #1) and `-Tuning x6` (no DoS tests); XML output (2.1.5
+      has no JSON). ZAP was not added.
+- [x] P2-5/6 Domain Audit tab (gui/tabs/domain_audit_tab.py): owned_domains table (migration 6) +
+      OwnedDomainStore (covers subdomains; SCOPE_CHANGE on add/remove, confirm dialog). core/domain_audit.py:
+      SPF (single record, syntax, +all/?all/~all, ptr, recursive 10-lookup count, broken includes), DMARC
+      (p, pct, sp, rua), DKIM (common selectors + user's; RSA size from SPKI/PKCS#1 DER, revoked, t=y), null
+      MX. core/subdomain_enum.py: subfinder -json / amass enum -passive (checks `amass enum -h` first) /
+      built-in crt.sh; names are never resolved or probed; "sensitive-looking" names -> Low finding.
+- [x] P2-7 wiring: results stored in host_audits (kind headers/nikto with host = normalized URL; kind
+      email/subdomains with host = domain); assessment.audit_findings() turns them into Findings
+      (kind web/email/subdomain), DeviceRisk.kind web/domain (KIND_LABEL), Assessment.web/.domains +
+      scope_summary(), Findings device pane, report (Type column, "Owned domains" in Scope, network requests
+      in Methodology). remediation.fixes_for() returns no one-click action for these kinds (config/DNS
+      changes; the finding's "How to fix it" has exact settings). HostAuditTab filters to HOST_KINDS.
+      Help + glossary added; tests in tests/test_web_domain.py (+2 GUI tests).
+- Web/Domain verification notes: tests/fixtures/headers_*.txt and nikto_2.1.5.xml are REAL captures
+  (curl / nikto 2.1.5 against local test servers). dns_records.json, subfinder.jsonl, amass_v4.txt and
+  crtsh.json are HAND-WRITTEN (container DNS answers everything empty, subfinder install was blocked,
+  the container proxy returns 403 for crt.sh); dns_resolver() itself is tested against a local dnspython-built UDP server. First
+  things to verify locally: Domain Audit on a real domain you own; crt.sh and subfinder output; whether your
+  amass build still has `enum -passive`; a nikto 2.5 run (its XML layout was hand-written in the test).
+  Ubuntu's nikto 2.1.5 prints a bogus "ERROR: Host maximum execution time ... reached" at start with any
+  -maxtime but scans normally. The cloud container strips /usr/share/doc, so nikto's DTD was missing there.
 - hashcat v6 changed --outfile-format to a comma list (1,2 = hash:plain); we read the POTFILE
   instead (always hash:plain). hashcat needs --force on CPU-only boxes. The container's `john` is
   the limited "core" build (no --pot=, few formats); real crack tests use hashcat.

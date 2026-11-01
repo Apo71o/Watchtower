@@ -16,6 +16,7 @@ from watchtower.storage.scope import (
     Maintenance,
     NetworkStore,
     NvdCache,
+    OwnedDomainStore,
     ScanStore,
     ScheduleStore,
     TargetStore,
@@ -33,7 +34,8 @@ class Bus(QObject):
     request_scan = Signal(str)               # open Scan a Target with this target filled in
     scan_finished = Signal()                 # new nmap results stored
     networks_changed = Signal()              # Wi-Fi observations or Authorized flags changed
-    audit_finished = Signal()                # new Host Audit (TLS/SNMP) results stored
+    audit_finished = Signal()                # new Host/Web/Domain Audit results stored
+    domains_changed = Signal()               # owned-domain list changed
     dependencies_changed = Signal()
 
 
@@ -53,6 +55,7 @@ class AppContext:
     schedules: ScheduleStore
     nvd: NvdCache
     maintenance: Maintenance
+    domains: OwnedDomainStore
 
     @classmethod
     def create(cls, db: Database, platform: PlatformInfo) -> AppContext:
@@ -64,7 +67,14 @@ class AppContext:
         runner.on_command(lambda cmd, purpose: bus.command_started.emit(cmd, purpose))
         return cls(db, settings, audit, runner, DependencyState(), platform, bus,
                    NetworkStore(db, audit), TargetStore(db, audit), ScanStore(db), HostAuditStore(db),
-                   ScheduleStore(db, audit), NvdCache(db), Maintenance(db))
+                   ScheduleStore(db, audit), NvdCache(db), Maintenance(db), OwnedDomainStore(db, audit))
+
+    def log_network(self, command: str, purpose: str, target: str | None = None) -> None:
+        """Record an outbound request Watchtower makes itself (not via a subprocess):
+        audit log NETWORK_REQUEST + Command Console. Safe to call from worker threads."""
+        from watchtower.storage.audit_log import Event
+        self.audit.append(Event.NETWORK_REQUEST, command=command, target=target, detail={"purpose": purpose})
+        self.bus.command_started.emit(command, f"{purpose} (network request)")
 
     def nvd_enabled(self) -> bool:
         from watchtower.storage.settings import NVD_ENABLED

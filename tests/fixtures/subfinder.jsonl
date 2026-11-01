@@ -1,0 +1,7 @@
+{"host":"www.homelab.example","input":"homelab.example","source":"crtsh"}
+{"host":"www.homelab.example","input":"homelab.example","source":"certspotter"}
+{"host":"vpn.homelab.example","input":"homelab.example","source":"crtsh"}
+{"host":"jenkins.dev.homelab.example","input":"homelab.example","source":"hackertarget"}
+{"host":"mail.homelab.example","input":"homelab.example","source":"anubis"}
+{"host":"homelab.example","input":"homelab.example","source":"crtsh"}
+{"host":"evil-homelab.example","input":"homelab.example","source":"rapiddns"}

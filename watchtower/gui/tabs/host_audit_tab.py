@@ -29,6 +29,7 @@ from PySide6.QtWidgets import (
 )
 
 from watchtower.core import default_creds, deps, snmp_audit, tls_audit
+from watchtower.core.assessment import HOST_KINDS
 from watchtower.core.findings_engine import latest_hosts
 from watchtower.core.runner import format_command
 from watchtower.core.targets import parse_target
@@ -138,7 +139,7 @@ class HostAuditTab(QWidget):
         cur = self.current_host()
         self.hosts = {a: hs for a, hs in latest_hosts(self.ctx.scans.with_output()).items()
                       if self.ctx.targets.covers(a)}
-        extra = {r["host"] for r in self.ctx.audits.latest() if self.ctx.targets.covers(r["host"])}
+        extra = {r["host"] for r in self.ctx.audits.latest(kinds=HOST_KINDS) if self.ctx.targets.covers(r["host"])}
         names = sorted(set(self.hosts) | extra | ({cur} if cur else set()), key=_sort_key)
         self.host_list.blockSignals(True)
         self.host_list.clear()
@@ -305,7 +306,7 @@ class HostAuditTab(QWidget):
             self.results.setMarkdown("Scan a host in **Scan a Target** (or add one above), then select it here.")
             return
         self.results.setMarkdown(host_markdown(host, self.hosts.get(host, (None, None))[0],
-                                               self.ctx.audits.latest(host)))
+                                               self.ctx.audits.latest(host, kinds=HOST_KINDS)))
 
 
 def _sort_key(addr: str):

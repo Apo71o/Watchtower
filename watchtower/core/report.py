@@ -17,6 +17,7 @@ from watchtower.core import attck_mapping, deps
 from watchtower.core.assessment import Assessment
 from watchtower.core.findings_engine import SEV_RANK, SEVERITIES, Finding
 from watchtower.core.history_diff import Change
+from watchtower.core.risk_scoring import KIND_LABEL
 
 SEV_COLORS = {"Critical": "#b71c1c", "High": "#e53935", "Medium": "#ef6c00", "Low": "#f9a825", "Info": "#757575"}
 LEVEL_COLORS = {"alert": "#c62828", "notice": "#ef6c00", "good": "#2e7d32", "info": "#757575"}
@@ -32,6 +33,7 @@ class ReportInput:
     changes: dict[str, list[Change]] = field(default_factory=dict)  # target -> latest diff
     commands: list[dict] = field(default_factory=list)          # audit-log command rows
     include_info: bool = False
+    domains: list[str] = field(default_factory=list)            # owned domains (Domain Audit scope)
 
 
 def _e(s) -> str:
@@ -87,7 +89,7 @@ def render_html(r: ReportInput, now: datetime | None = None) -> str:
     # executive summary
     worst = a.risks[0] if a.risks else None
     out.append("<h2>Executive summary</h2>")
-    out.append(f"<p>{a.hosts_assessed} host(s) and {a.networks_assessed} Wi-Fi network(s) were assessed, with "
+    out.append(f"<p>{a.scope_summary()} were assessed, with "
                f"{len(findings)} finding(s)"
                + (f". The highest-risk device is <strong>{_e(worst.label)}</strong> (risk {worst.score}/100)."
                   if worst and worst.findings else ".") + "</p>")
@@ -106,6 +108,10 @@ def render_html(r: ReportInput, now: datetime | None = None) -> str:
                "what they broadcast.</p>")
     if r.targets:
         out.append("<h4>Authorized targets</h4><p>" + ", ".join(f"<code>{_e(t)}</code>" for t in r.targets) + "</p>")
+    if r.domains:
+        out.append("<h4>Owned domains</h4><p>" + ", ".join(f"<code>{_e(d)}</code>" for d in r.domains) +
+                   "</p><p>Domains were assessed from public DNS records and public third-party data only "
+                   "(Certificate Transparency, passive DNS); nothing was sent to their servers.</p>")
     if r.networks:
         out.append("<h4>Authorized Wi-Fi networks</h4><table><tr><th>SSID</th><th>BSSID</th><th>Security</th></tr>"
                    + "".join(f"<tr><td>{_e(n.get('ssid') or '(hidden)')}</td><td>{_e(n['bssid'])}</td>"
@@ -117,7 +123,7 @@ def render_html(r: ReportInput, now: datetime | None = None) -> str:
     for d in a.risks:
         n = sum(1 for f in d.findings if r.include_info or f.severity != "Info")
         out.append(f"<tr><td><strong>{d.score}</strong></td><td>{_e(d.label)}</td>"
-                   f"<td>{'Wi-Fi' if d.kind == 'wifi' else 'Host'}</td><td>{n}</td><td>{_sev(d.worst)}</td></tr>")
+                   f"<td>{KIND_LABEL.get(d.kind, 'Host')}</td><td>{n}</td><td>{_sev(d.worst)}</td></tr>")
     out.append("</table>")
 
     # findings per device

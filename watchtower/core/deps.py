@@ -32,6 +32,7 @@ class Tool:
     binaries: tuple[str, ...] = ()  # any one of these on PATH counts as present
     version_args: tuple[str, ...] = ("--version",)
     python_module: str | None = None  # alternatively satisfied by an importable module
+    pip_package: str | None = None    # PyPI name when it differs from the module (dnspython -> dns)
     apt_package: str | None = None
     winget_id: str | None = None
     winget_interactive: bool = False  # installer can't run silently (e.g. Npcap free edition)
@@ -105,6 +106,19 @@ TOOLS: list[Tool] = [
     Tool("nikto", "Nikto", "Web server scanner for the Web Audit tab (known files, outdated software, misconfig).",
          (OS.LINUX, OS.WINDOWS, OS.MACOS), ("nikto",), ("-Version",), apt_package="nikto",
          manual_url="https://github.com/sullo/nikto", optional=True),
+    Tool("subfinder", "subfinder", "Passive subdomain discovery from public sources (CT logs, passive DNS) for a "
+         "domain you own (Domain Audit). Never contacts the domain's servers.",
+         (OS.LINUX, OS.WINDOWS, OS.MACOS), ("subfinder",), ("-version",),
+         manual_url="https://github.com/projectdiscovery/subfinder/releases", optional=True,
+         note="Go binary from the project's releases (or `go install`); not packaged by Ubuntu."),
+    Tool("amass", "OWASP Amass", "Alternative passive subdomain source (Domain Audit; only run with -passive).",
+         (OS.LINUX, OS.WINDOWS, OS.MACOS), ("amass",), ("-version",), apt_package="amass",
+         manual_url="https://github.com/owasp-amass/amass/releases", optional=True,
+         note="Watchtower only uses amass builds that still have `enum -passive`."),
+    Tool("dnspython", "dnspython (Python)", "DNS lookups of SPF / DKIM / DMARC records (Domain Audit).",
+         (OS.LINUX, OS.WINDOWS, OS.MACOS), (), python_module="dns", pip_package="dnspython",
+         manual_url="https://pypi.org/project/dnspython/", optional=True,
+         note="Python package: install into Watchtower's venv with  pip install dnspython"),
     Tool("weasyprint", "WeasyPrint", "Optional PDF export of reports (HTML export works without it).",
          (OS.LINUX, OS.WINDOWS, OS.MACOS), ("weasyprint",), ("--version",), python_module="weasyprint",
          apt_package="weasyprint", optional=True),
@@ -179,7 +193,7 @@ def install_hint(tool: Tool, os_: OS | None = None) -> str:
     if os_ is OS.WINDOWS and tool.winget_id:
         return f"winget install {tool.winget_id}"
     if tool.python_module and not tool.apt_package:
-        return f"pip install {tool.python_module}   (inside Watchtower's venv)"
+        return f"pip install {tool.pip_package or tool.python_module}   (inside Watchtower's venv)"
     if tool.manual_url:
         return f"Download: {tool.manual_url}"
     return "See INSTALL.md"
@@ -207,7 +221,7 @@ def check_tool(tool: Tool, runner: CommandRunner | None = None) -> ToolStatus:
         version = None
         try:
             from importlib.metadata import version as pkg_version
-            version = pkg_version(tool.python_module)
+            version = pkg_version(tool.pip_package or tool.python_module)
         except Exception:
             pass
         return ToolStatus(tool, True, path=f"python module '{tool.python_module}'", version=version,
@@ -337,7 +351,7 @@ def install_plan(missing: list[ToolStatus], python: str | None = None) -> Plan:
     python = python or sys.executable
     steps: list[Step] = []
     manual: list[str] = []
-    pip_mods = [s.tool.python_module for s in missing
+    pip_mods = [s.tool.pip_package or s.tool.python_module for s in missing
                 if s.tool.python_module and not (is_linux() and s.tool.apt_package)]
     if is_linux():
         for s in missing:

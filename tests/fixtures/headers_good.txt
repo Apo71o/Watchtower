@@ -1,0 +1,11 @@
+HTTP/1.0 200 OK
+Server: nginx 
+Date: Sun, 01 Nov 2026 19:08:45 GMT
+Content-Type: text/html; charset=utf-8
+Strict-Transport-Security: max-age=63072000; includeSubDomains; preload
+Content-Security-Policy: default-src 'self'; script-src 'self' 'nonce-r4nd0m'; object-src 'none'; base-uri 'self'; frame-ancestors 'none'
+X-Content-Type-Options: nosniff
+Referrer-Policy: strict-origin-when-cross-origin
+Set-Cookie: session=Zm9v; Path=/; Secure; HttpOnly; SameSite=Strict
+Set-Cookie: csrftoken=YmFy; Path=/; Secure; SameSite=Lax
+
