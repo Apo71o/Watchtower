@@ -265,6 +265,14 @@ Same rules: authorized/own targets only, ownership gate for new target types, ev
         e2e-tested here (no zip2john/jumbo in the container); arg construction + the missing-extractor
         error are unit-tested, raw hashcat run is tested for real. VERIFY the ZIP flow locally with
         John jumbo installed.
+      - 2026-11-01 follow-up (user installed jumbo via a /usr/local/bin/john symlink): (1) John is now
+        invoked by its REAL path (hash_cracker._john_bin() -> os.path.realpath) so jumbo finds john.conf
+        and its data next to the real binary in run/, not beside the symlink (the "fopen: .../john.conf:
+        No such file" failure). (2) Result parsing hardened: _recovered() only treats John output as a
+        result when `john --show` reports a cracked count (hc.john_show_count > 0); it no longer falls
+        back to parsing arbitrary stdout, so a John error line can't be shown as a "recovered password".
+        Note for Ubuntu: `apt install john` is the non-jumbo CORE build (1.9.0-2build1, no *2john, no
+        document formats); jumbo must be built from source (openwall/john) or otherwise installed.
 - [x] P2-1b Wordlists panel (user request 2026-11-01): fourth sub-panel "Wordlists" in password_tab.py
       (WordlistPanel) + core/wordlist_builder.py (Qt-free). Four sections: (1) build a targeted list from
       base words with bounded mutations — case/leet/append digits+years+symbols/combine pairs, hard

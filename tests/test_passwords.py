@@ -281,3 +281,25 @@ def test_hash_cracker_john_no_pot_and_document_extraction(tmp_path, monkeypatch)
     assert job.extract_argv == ["/usr/bin/zip2john", str(doc)]
     assert job.autodetect and job.document == str(doc) and job.hash_file.endswith(".zip.hash")
     assert not any(a.startswith("--format") for a in job.argv)   # auto-detect
+
+
+def test_john_invoked_by_realpath(tmp_path, monkeypatch):
+    """John is launched by its resolved real path so jumbo finds john.conf next to the
+    real binary, not beside a /usr/local/bin symlink."""
+    import os
+
+    from watchtower.core import hash_cracker as hc
+    (tmp_path / "run").mkdir()
+    real = tmp_path / "run" / "john"
+    real.write_text("")
+    (tmp_path / "bin").mkdir()
+    link = tmp_path / "bin" / "john"
+    link.symlink_to(real)
+    monkeypatch.setattr(hc.deps, "find_binary", lambda n: str(link) if n == "john" else None)
+    wl = tmp_path / "w.txt"
+    wl.write_text("x\n")
+    hf = tmp_path / "h.txt"
+    hf.write_text("5f4dcc3b5aa765d61d8327deb882cf99\n")
+    job = hc.build_john(str(hf), next(t for t in hc.HASH_TYPES if t.label == "MD5"), str(wl), str(tmp_path))
+    assert job.argv[0] == os.path.realpath(str(link)) == str(real)
+    assert hc.show_argv(job)[0] == str(real)

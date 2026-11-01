@@ -12,12 +12,21 @@ Wi-Fi handshake cracking.
 from __future__ import annotations
 
 import json
+import os
 import re
 import shutil
 from dataclasses import dataclass
 from pathlib import Path
 
 from watchtower.core import deps
+
+
+def _john_bin() -> str | None:
+    """John's real path. Jumbo John finds john.conf and its data files next to the
+    invoked binary, so a symlink (e.g. /usr/local/bin/john -> ~/john-jumbo/run/john)
+    makes it look for john.conf beside the symlink and fail. Resolve the real path."""
+    p = deps.find_binary("john")
+    return os.path.realpath(p) if p else None
 
 
 @dataclass(frozen=True)
@@ -127,7 +136,7 @@ def build_john(hash_file: str, htype: HashType, wordlist: str, workdir: str,
                rules: str | None = None, autodetect: bool = False) -> CrackJob:
     if not htype.john_format:
         raise CrackError(f"No John format configured for {htype.label}.")
-    john = deps.find_binary("john")
+    john = _john_bin()
     if not john:
         raise CrackError("John the Ripper is not installed.")
     # No --pot: John's "core" build (Ubuntu's `john` package) rejects it; both core and
@@ -182,7 +191,7 @@ def show_argv(job: CrackJob) -> list[str]:
     if job.tool == "hashcat":
         return [deps.find_binary("hashcat"), "-m", str(job.hash_type.hashcat_mode), "--potfile-path", job.pot_file,
                 "--show", "--outfile-format", "1,2", job.hash_file]
-    argv = [deps.find_binary("john"), "--show", job.hash_file]
+    argv = [_john_bin(), "--show", job.hash_file]
     if not job.autodetect:
         argv.insert(1, f"--format={job.hash_type.john_format}")
     return argv

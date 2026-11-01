@@ -551,6 +551,29 @@ def test_hash_recovery_run_executes_logs_and_shows_password(ctx, tmp_path, monke
                    if e.event in ("command_start", "command_end", "user_confirmation"))
 
 
+def test_hash_recovery_result_parsing_ignores_errors(ctx, monkeypatch):
+    """A John error line (e.g. a missing john.conf) must never be reported as a recovered
+    password; only a genuine '--show' result with a cracked-count is parsed."""
+    from watchtower.core import hash_cracker as hc
+    from watchtower.gui.tabs.password_tab import HashRecoveryPanel
+    panel = HashRecoveryPanel(ctx)
+    job = hc.CrackJob("john", ["john", "--show", "h"], "h", hc.HASH_TYPES[0])
+
+    class R:
+        def __init__(self, stdout):
+            self.stdout = stdout
+            self.exit_code = 0
+
+    monkeypatch.setattr(ctx.runner, "run",
+                        lambda *a, **k: R("fopen: /usr/local/bin/john.conf: No such file or directory\n"))
+    assert panel._recovered(job, R("")) == []            # error output -> nothing recovered
+
+    monkeypatch.setattr(ctx.runner, "run",
+                        lambda *a, **k: R("myzip.hash:secretpw\n\n1 password hash cracked, 0 left\n"))
+    found = panel._recovered(job, R(""))
+    assert found and found[0][1] == "secretpw"           # real result -> parsed
+
+
 def test_wordlist_panel_build_merge_and_starter(ctx, tmp_path, monkeypatch):
     from PySide6.QtWidgets import QMessageBox
 

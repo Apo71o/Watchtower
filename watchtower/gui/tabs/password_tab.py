@@ -713,18 +713,18 @@ class HashRecoveryPanel(QWidget):
         run_in_background(work, on_done=self._run_done, on_error=self._run_error)
 
     def _recovered(self, job, result):
-        """(hash, plaintext) pairs after a run. hashcat: from the potfile; John: via --show
-        (its default pot), falling back to parsing the run output."""
+        """(hash, plaintext) pairs after a run. hashcat: from the potfile; John: from `--show`,
+        but ONLY when John reports at least one cracked hash (otherwise its output is a diagnostic
+        or error, not a result — never parse that as a password)."""
         if job.tool == "hashcat":
             return hc.read_cracked(job)
         try:
             shown = self.ctx.runner.run(hc.show_argv(job), purpose="list recovered passwords", target=job.hash_file)
-            found = hc.parse_cracked("john", shown.stdout)
-            if found:
-                return found
         except CommandUnavailable:
-            pass
-        return hc.parse_cracked("john", result.stdout)
+            return []
+        if hc.john_show_count(shown.stdout) > 0:
+            return hc.parse_cracked("john", shown.stdout)
+        return []
 
     def _cancel(self):
         if self.cancel_event:
