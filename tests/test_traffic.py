@@ -101,7 +101,7 @@ def test_findings_severity_and_devices():
     assert all(f.source == "Traffic audit (lab.pcapng)" for f in fs)
 
 
-def test_stats_and_capinfos_and_interfaces():
+def test_stats_and_interfaces():
     st = ta.parse_stats((FX / "traffic_stats.txt").read_text())
     assert st.packets == 176 and ("ftp", 3, 7) in st.protocols
     c = st.conversations[0]
@@ -109,7 +109,7 @@ def test_stats_and_capinfos_and_interfaces():
     newer = "10.0.0.1  <-> 10.0.0.2   5 1 kB   6 2 kB   11 3 kB   0.1   2.0\n"
     st2 = ta.parse_stats("IPv4 Conversations\n" + newer)
     assert st2.conversations[0].bytes == 3000                   # newer tshark prints kB units
-    assert ta.parse_capinfos("x.pcapng\t176\t8.07\n") == (176, 8.07)
+    assert st.seconds == pytest.approx(8.074)
     assert ta.stats_from_json(ta.stats_to_json(st)) == st
     ifaces = ta.parse_interfaces((FX / "dumpcap_D.txt").read_text())
     assert ("lo", "Loopback") in ifaces and ("eth0", "") in ifaces
@@ -235,3 +235,41 @@ def test_scheduled_capture_end_to_end(db, home):
     cmds = [e.command for e in audit.entries(limit=50) if e.event == "command_start"]
     assert any(c and "dumpcap" in c for c in cmds) and any(c and "tshark" in c for c in cmds)
     assert sid == scheds.all()[0]["id"] and scheds.all()[0]["last_status"].startswith("ok")
+
+
+@pytest.mark.skipif(not shutil.which("tshark") or not sys.platform.startswith("linux"), reason="needs tshark")
+def test_analysis_works_when_tshark_may_not_open_files(db, tmp_path, monkeypatch):
+    """Regression: on Ubuntu, AppArmor can stop tshark opening captures under ~/.local/share
+    ("tshark: You don't have permission to read the file ..."). Watchtower pipes the file in
+    instead. A stand-in tshark that refuses every file path proves the path is never needed."""
+    from watchtower.core.runner import CommandRunner
+    from watchtower.storage.audit_log import AuditLog
+    real = shutil.which("tshark")
+    fake = tmp_path / "tshark"
+    fake.write_text(f"""#!/bin/sh
+prev=""
+for a in "$@"; do
+  if [ "$prev" = "-r" ] && [ "$a" != "-" ]; then
+    echo "tshark: You don't have permission to read the file \\"$a\\"." >&2; exit 2
+  fi
+  prev="$a"
+done
+exec {real} "$@"
+""")
+    fake.chmod(0o755)
+    monkeypatch.setattr(ta, "tshark_binary", lambda: str(fake))
+    hidden = tmp_path / ".local" / "share" / "watchtower" / "captures"
+    hidden.mkdir(parents=True)
+    pcap = hidden / "20261101-145058-wlp195s0.pcapng"
+    pcap.write_bytes((FX / "traffic_lab.pcapng").read_bytes())
+    audit = AuditLog(db)
+    a = ta.analyze_pcap(CommandRunner(audit), str(pcap))
+    assert not a.error, a.error
+    assert a.stats.packets == 176 and any(e.proto == "FTP" for e in a.events)
+    cmds = [e.command for e in audit.entries(limit=10) if e.event == "command_start"]
+    assert cmds and all(" -r - " in c and c.endswith(f"< {pcap}") for c in cmds)    # shown honestly in the log
+    # files Watchtower itself can't read get a clear explanation instead of tshark's
+    assert ta.unreadable_reason(str(pcap)) == ""
+    assert "no longer exists" in ta.analyze_pcap(CommandRunner(audit), str(tmp_path / "gone.pcapng")).error
+    monkeypatch.setattr(ta, "unreadable_reason", lambda p: "Watchtower can't read it (it belongs to 'root')")
+    assert "belongs to 'root'" in ta.analyze_pcap(CommandRunner(audit), str(pcap)).error

@@ -126,7 +126,13 @@ def useful_interfaces(ifaces: list[tuple[str, str]]) -> list[tuple[str, str]]:
 
 # ---- analysis ----
 
-def fields_argv(pcap: str) -> list[str]:
+# tshark reads the capture from stdin ("-r -"): Watchtower opens the file and pipes it in. Ubuntu's
+# AppArmor profiles for Wireshark's tools only allow certain paths (e.g. not ~/.local/share), so a
+# tshark that may not open the file itself would fail with "You don't have permission to read the file".
+STDIN = "-"
+
+
+def fields_argv(pcap: str = STDIN) -> list[str]:
     argv = [tshark_binary() or "tshark", "-r", pcap, "-n", "-Y", DISPLAY_FILTER, "-T", "fields",
             "-E", "separator=/t", "-E", "occurrence=a", "-E", "aggregator=|", "-E", "header=y"]
     for f in FIELDS:
@@ -134,12 +140,9 @@ def fields_argv(pcap: str) -> list[str]:
     return argv
 
 
-def stats_argv(pcap: str) -> list[str]:
-    return [tshark_binary() or "tshark", "-r", pcap, "-q", "-n", "-z", "io,phs", "-z", "conv,ip", "-z", "conv,ipv6"]
-
-
-def capinfos_argv(pcap: str) -> list[str]:
-    return [deps.find_binary("capinfos") or "capinfos", "-T", "-r", "-M", "-c", "-u", pcap]
+def stats_argv(pcap: str = STDIN) -> list[str]:
+    return [tshark_binary() or "tshark", "-r", pcap, "-q", "-n", "-z", "io,phs", "-z", "conv,ip", "-z", "conv,ipv6",
+            "-z", "io,stat,0"]
 
 
 @dataclass
@@ -300,6 +303,9 @@ _UNITS = {"bytes": 1, "": 1, "kB": 1000, "KiB": 1024, "MB": 10**6, "MiB": 2**20,
 def parse_stats(text: str) -> CaptureStats:
     st = CaptureStats()
     section = ""
+    m = re.search(r"Duration:\s*([\d.]+)\s*secs", text)
+    if m:
+        st.seconds = float(m.group(1))
     for line in text.splitlines():
         if "Protocol Hierarchy Statistics" in line:
             section = "phs"
@@ -307,7 +313,8 @@ def parse_stats(text: str) -> CaptureStats:
         if re.search(r"IPv[46] Conversations", line):
             section = "conv"
             continue
-        if line.startswith("====="):
+        if line.startswith("=====") or "IO Statistics" in line:
+            section = "" if "IO Statistics" in line else section
             continue
         if section == "phs":
             m = re.match(r"^(\s*)(\S+)\s+frames:(\d+)\s+bytes:(\d+)", line)
@@ -325,18 +332,6 @@ def parse_stats(text: str) -> CaptureStats:
         st.packets = st.protocols[0][2]
     st.conversations.sort(key=lambda c: -c.bytes)
     return st
-
-
-def parse_capinfos(text: str) -> tuple[int, float]:
-    """capinfos -T -r -M -c -u: 'file<TAB>packets<TAB>seconds'."""
-    for line in text.splitlines():
-        parts = line.rstrip("\n").split("\t")
-        if len(parts) >= 3:
-            try:
-                return int(parts[-2]), float(parts[-1])
-            except ValueError:
-                continue
-    return 0, 0.0
 
 
 # ---- findings ----
@@ -552,22 +547,47 @@ class Analysis:
     error: str = ""
 
 
+def unreadable_reason(pcap: str) -> str:
+    """Why Watchtower itself can't read a capture file ("" if it can)."""
+    import os
+    try:
+        with open(pcap, "rb") as f:
+            f.read(1)
+        return ""
+    except FileNotFoundError:
+        return f"The capture file no longer exists: {pcap}"
+    except PermissionError:
+        owner = ""
+        try:
+            import pwd
+            owner = pwd.getpwuid(os.stat(pcap).st_uid).pw_name
+        except (ImportError, KeyError, OSError):
+            pass
+        return (f"Watchtower can't read {pcap}" + (f" (it belongs to '{owner}')" if owner else "") +
+                ". If dumpcap is installed setuid root, files it writes belong to root: reinstall it with "
+                "capabilities instead (sudo dpkg-reconfigure wireshark-common, answer Yes), or fix the owner with "
+                f"sudo chown $USER {pcap}")
+    except OSError as exc:
+        return f"Can't read {pcap}: {exc}"
+
+
 def analyze_pcap(runner, pcap: str, target: str | None = None) -> Analysis:
-    """Run tshark (fields + statistics) and capinfos on a capture file. Blocking.
-    The tshark output is parsed in memory only; CommandRunner logs commands, not output."""
+    """Run tshark (fields + statistics) on a capture file. Blocking. Watchtower opens the file
+    and pipes it to tshark, so AppArmor path rules on tshark don't matter. The tshark output is
+    parsed in memory only; CommandRunner logs commands, not output."""
     if not tshark_binary():
         return Analysis([], CaptureStats(), "tshark is not installed (sudo apt install tshark).")
-    res = runner.run(fields_argv(pcap), purpose="Traffic audit: analyze capture (tshark)", target=target,
-                     timeout=1800)
+    why = unreadable_reason(pcap)
+    if why:
+        return Analysis([], CaptureStats(), why)
+    res = runner.run(fields_argv(), purpose="Traffic audit: analyze capture (tshark)", target=target,
+                     timeout=1800, stdin_file=pcap)
     if res.exit_code != 0 and not res.stdout.strip():
-        return Analysis([], CaptureStats(), (res.stderr.strip().splitlines() or [f"tshark exit {res.exit_code}"])[-1])
+        err = (res.stderr.strip().splitlines() or [f"tshark exit {res.exit_code}"])[-1]
+        return Analysis([], CaptureStats(), f"tshark couldn't read the capture: {err}")
     events = parse_fields(res.stdout)
-    st = parse_stats(runner.run(stats_argv(pcap), purpose="Traffic audit: statistics (tshark)", target=target,
-                                timeout=1800).stdout)
-    if deps.find_binary("capinfos"):
-        pk, secs = parse_capinfos(runner.run(capinfos_argv(pcap), purpose="Traffic audit: capture length",
-                                             target=target, timeout=120).stdout)
-        st.packets, st.seconds = pk or st.packets, secs
+    st = parse_stats(runner.run(stats_argv(), purpose="Traffic audit: statistics (tshark)", target=target,
+                                timeout=1800, stdin_file=pcap).stdout)
     return Analysis(events, st)
 
 

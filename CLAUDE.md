@@ -264,7 +264,13 @@ Same rules: authorized/own targets only, ownership gate for new target types, ev
       CaptureStore.latest_per_source()); scheduler.run_capture_schedule() (run_due with the capture stores, GUI tick
       + headless); What Changed lists "Traffic on <iface>" sources and diffs them. "Allow capturing…" = setcap plan
       on dumpcap (Tool needs_raw_sockets). Fixture traffic_lab.pcapng is a REAL loopback capture of generated lab
-      traffic (fake 's3cret-*' passwords); traffic_fields.tsv/traffic_stats.txt are tshark 4.2.2 output. This
+      traffic (fake 's3cret-*' passwords); traffic_fields.tsv/traffic_stats.txt are tshark 4.2.2 output.
+      tshark NEVER opens the capture path itself: analyze_pcap() pipes the file in (`tshark -r -`, via
+      CommandRunner.run(stdin_file=...), logged as `... -r - < path`). Reason: on the user's Ubuntu 26.04 tshark
+      failed with "You don't have permission to read the file ~/.local/share/watchtower/captures/..." although
+      dumpcap had just written it (AppArmor confines Wireshark's tools to certain paths; passing an open fd
+      wouldn't help, AppArmor revalidates inherited fds). Capture length comes from `-z io,stat,0` (capinfos
+      can't read stdin). Tab has "Analyze again" for captures whose analysis failed. This
       OpenSSL had no 3DES, so weak-cipher detection is unit-tested with synthetic rows. Verify locally: capture on
       your real LAN/Wi-Fi interface without root after "Allow capturing…", and Open in Wireshark.
 - [x] GUI clarity pass (2026-11-01): tooltips on every control (gui/ui.py + enforcing tests), Help Overview rewritten

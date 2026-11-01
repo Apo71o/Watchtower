@@ -92,24 +92,53 @@ class CommandRunner:
         target: str | None = None,
         timeout: float | None = 600,
         input_text: str | None = None,
+        stdin_file: str | None = None,
     ) -> CommandResult:
+        """stdin_file: Watchtower opens this file itself and streams it to the command's stdin through
+        a pipe (shown in the logged command as `< file`). Used where the tool may not be allowed to
+        open the path on its own (e.g. AppArmor-confined tshark reading ~/.local)."""
         if not argv:
             raise ValueError("empty argv")
-        command = format_command(argv)
+        command = format_command(argv) + (f" < {shlex.quote(stdin_file)}" if stdin_file else "")
         self._announce(command, purpose)
         self._require_binary(argv, command, purpose, target)
+        src = None
+        if stdin_file:
+            try:
+                src = open(stdin_file, "rb")  # noqa: SIM115 - closed by the feeder thread
+            except OSError as exc:
+                self.audit.append(Event.COMMAND_ERROR, command=command, target=target,
+                                  detail={"purpose": purpose, "error": str(exc)})
+                raise
         start_id = self.audit.append(Event.COMMAND_START, command=command, target=target,
                                      detail={"purpose": purpose})
         try:
             proc = subprocess.Popen(
                 argv, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, errors="replace",
-                stdin=subprocess.PIPE if input_text is not None else subprocess.DEVNULL, **_popen_flags(),
+                stdin=subprocess.PIPE if (input_text is not None or src) else subprocess.DEVNULL, **_popen_flags(),
             )
         except OSError as exc:
+            if src:
+                src.close()
             self.audit.append(Event.COMMAND_ERROR, command=command, target=target,
                               detail={"purpose": purpose, "error": str(exc)}, ref_id=start_id)
             raise CommandUnavailable(f"Could not run '{argv[0]}': {exc}") from exc
         self._track(proc)
+        if src:
+            pipe, proc.stdin = proc.stdin, None      # communicate() must not touch the pipe the feeder owns
+
+            def feed():
+                try:
+                    shutil.copyfileobj(src, pipe.buffer, 1 << 20)
+                except (BrokenPipeError, OSError, ValueError):
+                    pass          # the tool exited early; its exit code/stderr say why
+                finally:
+                    src.close()
+                    try:
+                        pipe.close()
+                    except OSError:
+                        pass
+            threading.Thread(target=feed, daemon=True).start()
         try:
             out, err = proc.communicate(input=input_text, timeout=timeout)
         except subprocess.TimeoutExpired:

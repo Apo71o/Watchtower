@@ -194,6 +194,9 @@ class TrafficTab(QWidget):
         self.wireshark_btn.setToolTip("Open the selected capture in Wireshark to inspect it packet by packet.")
         self.folder_btn = QPushButton("Show file")
         self.folder_btn.setToolTip("Open the folder containing the capture file.")
+        self.reanalyze_btn = QPushButton("Analyze again")
+        self.reanalyze_btn.setToolTip("Run the analysis on the selected capture file again (for example after it "
+                                      "failed, or after updating Watchtower). Doesn't capture anything new.")
         self.delete_btn = QPushButton("Delete")
         self.delete_btn.setToolTip("Remove the selected capture from Watchtower. Files Watchtower recorded are "
                                    "deleted from disk; files you opened are left untouched.")
@@ -203,6 +206,7 @@ class TrafficTab(QWidget):
         b1 = QHBoxLayout()
         b1.addWidget(self.wireshark_btn)
         b1.addWidget(self.folder_btn)
+        b1.addWidget(self.reanalyze_btn)
         b1.addWidget(self.delete_btn)
         ll.addLayout(b1)
         left = QWidget()
@@ -254,6 +258,7 @@ class TrafficTab(QWidget):
         self.wireshark_btn.clicked.connect(self.open_in_wireshark)
         self.folder_btn.clicked.connect(self.show_file)
         self.delete_btn.clicked.connect(self.delete_capture)
+        self.reanalyze_btn.clicked.connect(self.reanalyze)
         self.add_sched_btn.clicked.connect(self.add_schedule)
         self.sched_rm_btn.clicked.connect(self.remove_schedule)
         self.sched_run_btn.clicked.connect(self.run_schedule_now)
@@ -323,6 +328,7 @@ class TrafficTab(QWidget):
         if not deps.find_binary("wireshark"):
             self.wireshark_btn.setToolTip("Wireshark isn't installed (sudo apt install wireshark).")
         self.folder_btn.setEnabled(has_file)
+        self.reanalyze_btn.setEnabled(has_file and have_tshark and not busy)
         self.delete_btn.setEnabled(bool(row) and not busy)
         self.add_sched_btn.setEnabled(bool(iface) and have_dumpcap)
         sel = self._selected_schedule() is not None
@@ -429,6 +435,17 @@ class TrafficTab(QWidget):
             return self._analyze(cid, path, None)
 
         run_in_background(work, on_done=lambda n: self._end(self._done_text(n), cid),
+                          on_error=lambda m: self._end("Analysis failed: " + m.split("\n\n")[0], cid))
+
+    def reanalyze(self):
+        row = self.current_capture()
+        if not row or not row.get("pcap_path"):
+            return
+        cid, pcap = row["id"], row["pcap_path"]
+        target = row["source"].split(":", 1)[1] if row["source"].startswith("interface:") else None
+        self._begin(f"Analyzing {Path(pcap).name} again…")
+        run_in_background(lambda: self._analyze(cid, pcap, target),
+                          on_done=lambda n: self._end(self._done_text(n), cid),
                           on_error=lambda m: self._end("Analysis failed: " + m.split("\n\n")[0], cid))
 
     def _analyze(self, cid: int, pcap: str, target: str | None) -> int:
