@@ -59,7 +59,8 @@ in the **Glossary** tab above.
   capture, password cracking, WPS attacks, rogue access points or login
   attempts (not even default passwords). Weaknesses are explained in text.
 - **Everything is recorded.** Every command and network request appears in the
-  Command Console at the bottom and in the **Audit Log** tab.
+  Command Console at the bottom (hide or show it with **View → Command Console**
+  or Ctrl+backtick) and is always kept in the **Audit Log** tab.
 - **Your data stays here.** Everything is stored in one local database. No
   telemetry. Watchtower only contacts outside services when you ask it to:
   NVD CVE lookups (off by default, Settings), the Pwned Passwords breach check

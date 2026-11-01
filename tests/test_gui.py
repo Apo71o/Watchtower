@@ -715,3 +715,26 @@ def test_devices_view_asks_to_reanalyze_old_captures(ctx):
     dv = DevicesView(ctx)
     dv.show_capture(ctx.captures.get(cid))
     assert "Analyze again" in dv.detail.toPlainText() and dv.table.rowCount() == 0
+
+
+def test_command_console_can_be_hidden_and_remembers(ctx):
+    from watchtower.gui.main_window import MainWindow
+    from watchtower.storage.settings import CONSOLE_VISIBLE
+    win = MainWindow(ctx)
+    win.show()
+    QApplication.processEvents()
+    assert win.console_dock.isVisible() and win.console_action.isChecked()
+    assert win.console_action.shortcut().toString() == "Ctrl+`" and win.console_action.toolTip()
+    win.console_action.trigger()                       # View -> Command Console (or Ctrl+`)
+    QApplication.processEvents()
+    assert not win.console_dock.isVisible() and ctx.settings.get(CONSOLE_VISIBLE) is False
+    ctx.runner.run([sys.executable, "-c", "pass"], purpose="still logged while hidden")
+    QApplication.processEvents()
+    assert any(e.event == "command_start" and "-c pass" in (e.command or "") for e in ctx.audit.entries(limit=5))
+    win2 = MainWindow(ctx)                             # next start: stays hidden
+    win2.show()
+    QApplication.processEvents()
+    assert not win2.console_dock.isVisible() and not win2.console_action.isChecked()
+    win2.console_action.trigger()
+    QApplication.processEvents()
+    assert win2.console_dock.isVisible() and ctx.settings.get(CONSOLE_VISIBLE) is True

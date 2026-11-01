@@ -24,7 +24,7 @@ from watchtower.gui.tabs.scan_tab import ScanTab
 from watchtower.gui.tabs.settings_tab import SettingsTab
 from watchtower.gui.tabs.traffic_tab import TrafficTab
 from watchtower.gui.tabs.web_audit_tab import WebAuditTab
-from watchtower.storage.settings import DEPS_REVIEWED
+from watchtower.storage.settings import CONSOLE_VISIBLE, DEPS_REVIEWED
 
 
 class MainWindow(QMainWindow):
@@ -86,15 +86,28 @@ class MainWindow(QMainWindow):
         dock.setObjectName("command_console")
         dock.setWidget(self.console)
         dock.setFeatures(QDockWidget.DockWidgetFeature.DockWidgetMovable
-                         | QDockWidget.DockWidgetFeature.DockWidgetFloatable)
+                         | QDockWidget.DockWidgetFeature.DockWidgetFloatable
+                         | QDockWidget.DockWidgetFeature.DockWidgetClosable)
         self.addDockWidget(Qt.DockWidgetArea.BottomDockWidgetArea, dock)
         self.resizeDocks([dock], [120], Qt.Orientation.Vertical)
+        self.console_dock = dock
+        dock.setVisible(bool(ctx.settings.get(CONSOLE_VISIBLE, True)))
+        # Remember the user's choice (close button, menu or shortcut), not window minimize/restore.
+        dock.visibilityChanged.connect(self._console_visibility_changed)
         self.console.setToolTip("Every command and network request Watchtower makes, shown before it starts. The same "
                                 "entries are kept in the Audit Log tab.")
         ctx.bus.command_started.connect(self._show_command)
         ctx.bus.request_scan.connect(lambda _t: self.tabs.setCurrentWidget(self.pages["scan"]))
 
         # Menus
+        view = self.menuBar().addMenu("&View")
+        self.console_action = dock.toggleViewAction()
+        self.console_action.setText("Command Console")
+        self.console_action.setShortcut("Ctrl+`")
+        self.console_action.setToolTip("Show or hide the Command Console. Hidden or not, every command is still "
+                                       "recorded in the Audit Log tab and shown briefly in the status bar.")
+        self.console_action.setStatusTip(self.console_action.toolTip())
+        view.addAction(self.console_action)
         tools = self.menuBar().addMenu("&Tools")
         dep_action = QAction("Dependency Check…", self)
         dep_action.triggered.connect(self.show_dependency_check)
@@ -114,6 +127,10 @@ class MainWindow(QMainWindow):
                     QStyle.StandardPixmap.SP_MessageBoxWarning), self)
                 self._tray.show()
             self._tray.showMessage(title, message, QSystemTrayIcon.MessageIcon.Warning, 10000)
+
+    def _console_visibility_changed(self, visible: bool):
+        if self.isVisible() and not self.isMinimized():
+            self.ctx.settings.set(CONSOLE_VISIBLE, visible)
 
     def _show_command(self, command: str, purpose: str):
         ts = datetime.now().strftime("%H:%M:%S")
