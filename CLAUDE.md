@@ -127,6 +127,10 @@ docs/SPEC.md             original build prompt (authoritative requirements)
 - Scheduler: GUI ticks every 60 s unless settings SCHED_BACKGROUND is on (then the systemd timer owns
   runs, to avoid double scans). Scheduled scans never prompt for root: they're skipped with a
   status instead. The systemd timer install path is untested here (no systemd in the container).
+- NVD: the cloud container's network policy blocked services.nvd.nist.gov, so the client was built
+  from the documented API 2.0 schema and tested against tests/fixtures/nvd_api2_sample.json, which is
+  HAND-WRITTEN (see its _about). First thing to verify locally: enable the toggle, scan a host with
+  -sV, click "Look up CVEs on NVD"; then replace the sample with a captured response.
 - Monitor-mode and airodump-ng paths are unit-tested against fixtures only; the cloud container
   has no Wi-Fi hardware. Verify on real hardware locally.
 
@@ -161,8 +165,11 @@ docs/SPEC.md             original build prompt (authoritative requirements)
 - [x] 9. core/report.py (self-contained HTML; all untrusted text html-escaped, incl. SSIDs and NSE output;
         tiny **bold**/`code` markdown), gui/report_export.py (Findings "Export report…" + Tools menu),
         PDF via `python -m weasyprint` or the weasyprint CLI (tested for real with WeasyPrint 61)
-- [ ] 10. Help/glossary content: ongoing alongside each step
-- [ ] 11. Live NVD lookups behind the Settings toggle
+- [x] 10. Help/glossary content: written alongside each step (keep doing so for new features)
+- [x] 11. core/nvd.py (NVD CVE API 2.0 via virtualMatchString=<CPE 2.3 from nmap>, paging, 6.5 s/0.7 s
+        throttle without/with apiKey, 403/429 handling), NvdCache table (migration 5, 7-day TTL),
+        AppContext.nvd_lookup() logs every request as Event.NETWORK_REQUEST + Command Console;
+        Findings "Look up CVEs on NVD" (+ automatic after scans) only when Settings toggle is on
 
 ## Cloud vs local
 

@@ -45,6 +45,7 @@ class Finding:
     patch_check: dict = field(default_factory=dict)  # distro/revision detection + verdict (see distro_patch_status)
     product: str = ""            # nmap product name of the affected service (for remediation)
     exploits: list[dict] = field(default_factory=list)  # public Metasploit modules for its CVEs (names only)
+    unverified: bool = False     # can't be checked from the network (e.g. NVD match on a distro package)
 
     @property
     def key(self) -> str:

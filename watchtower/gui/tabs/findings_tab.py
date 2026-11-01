@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import getpass
 
-from PySide6.QtCore import Qt, QUrl
+from PySide6.QtCore import QObject, Qt, QUrl, Signal
 from PySide6.QtGui import QBrush, QColor, QDesktopServices, QGuiApplication
 from PySide6.QtWidgets import (
     QCheckBox,
@@ -21,9 +21,9 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from watchtower.core import attck_mapping, deps, exploit_xref, interfaces, remediation
+from watchtower.core import attck_mapping, deps, exploit_xref, interfaces, nvd, remediation
 from watchtower.core.assessment import Assessment, assess
-from watchtower.core.findings_engine import SEV_RANK, SEVERITIES, Finding
+from watchtower.core.findings_engine import SEV_RANK, SEVERITIES, Finding, latest_hosts
 from watchtower.core.platform_utils import data_dir, is_linux
 from watchtower.gui.context import AppContext
 from watchtower.gui.run_dialog import RunPlanDialog
@@ -44,6 +44,10 @@ def _item(text, color=None, bold=False):
         f.setBold(True)
         it.setFont(f)
     return it
+
+
+class _Progress(QObject):
+    text = Signal(str)
 
 
 class _SortItem(QTableWidgetItem):
@@ -83,12 +87,19 @@ class FindingsTab(QWidget):
         self.include_unauth.setToolTip("Assess every network seen nearby, not just ones marked Authorized "
                                        "(uses only what they broadcast).")
         self.refresh_btn = QPushButton("Refresh")
+        self.nvd_btn = QPushButton("Look up CVEs on NVD")
+        self.nvd_btn.setToolTip("Queries the NIST National Vulnerability Database for the service versions nmap "
+                                "found. Enable it in Settings; every request is logged.")
+        self.nvd_btn.clicked.connect(lambda: self.nvd_lookup(manual=True))
+        self.nvd_status = QLabel()
         self.export_btn = QPushButton("Export report…")
         self.export_btn.clicked.connect(self.export_report)
         top = QHBoxLayout()
         top.addWidget(self.summary, 1)
         top.addWidget(self.include_unauth)
         top.addWidget(self.min_sev)
+        top.addWidget(self.nvd_status)
+        top.addWidget(self.nvd_btn)
         top.addWidget(self.refresh_btn)
         top.addWidget(self.export_btn)
 
@@ -165,9 +176,40 @@ class FindingsTab(QWidget):
         ctx.bus.scan_finished.connect(self.refresh)
         ctx.bus.networks_changed.connect(self.refresh)
         ctx.bus.audit_finished.connect(self.refresh)
+        ctx.bus.scan_finished.connect(lambda: self.nvd_lookup(manual=False))
         self._msf_index: dict | None = None
         self.refresh()
         self._load_msf_index()
+
+    def nvd_lookup(self, manual: bool = True):
+        if not self.ctx.nvd_enabled() or getattr(self, "_nvd_running", False):
+            return
+        hosts = [h for h, _ in latest_hosts(self.ctx.scans.with_output()).values()]
+        cpes = nvd.host_cpes(hosts)
+        if not cpes:
+            if manual:
+                self.nvd_status.setText("No versioned CPEs to look up: run a scan with version detection (-sV).")
+            return
+        self._nvd_running = True
+        self.nvd_btn.setEnabled(False)
+        # Keep a reference: a local QObject would be garbage-collected while the worker still emits on it.
+        self._nvd_progress = progress = _Progress()
+        progress.text.connect(self.nvd_status.setText)
+
+        def done(r):
+            self._nvd_running = False
+            self.nvd_btn.setEnabled(True)
+            fetched, found = r
+            self.nvd_status.setText(f"NVD: {found} CVE(s) from {fetched} new lookup(s)" if fetched
+                                    else "NVD: up to date (cached for 7 days)")
+            self.refresh()
+
+        def failed(msg):
+            self._nvd_running = False
+            self.nvd_btn.setEnabled(True)
+            self.nvd_status.setText(msg.split("\n\n")[0][:160])
+            self.refresh()
+        run_in_background(self.ctx.nvd_lookup, cpes, progress.text.emit, on_done=done, on_error=failed)
 
     def export_report(self):
         from watchtower.gui.report_export import ExportDialog
@@ -185,7 +227,9 @@ class FindingsTab(QWidget):
 
     def refresh(self):
         self.assessment = assess(self.ctx.scans.with_output(), self.ctx.networks.all(),
-                                 self.include_unauth.isChecked(), self.ctx.audits.latest(), self._msf_index)
+                                 self.include_unauth.isChecked(), self.ctx.audits.latest(), self._msf_index,
+                                 self.ctx.nvd.all() if self.ctx.nvd_enabled() else None)
+        self.nvd_btn.setVisible(self.ctx.nvd_enabled())
         a = self.assessment
         c = a.counts()
         parts = [f"<span style='color:{SEV_COLORS[s]}'><b>{c[s]}</b> {s}</span>" for s in SEVERITIES if c[s]]
@@ -486,8 +530,12 @@ def _cve_section(f: Finding) -> list[str]:
                                    if f.cvss is not None else ""),
         ("Weakness (CWE)", info.get("cwe")), ("Disclosed", info.get("disclosed")),
         ("Affected upstream versions", "; ".join(affected)), ("Fixed upstream in", info.get("fixed_in")),
-        ("Version seen on host", f.version),
+        ("Version seen on host", f.version), ("CVSS vector", info.get("vector")),
     ])
+    if info.get("exploit_refs"):
+        lines += ["**NVD references tagged as exploits:**", ""] + [f"- <{u}>" for u in info["exploit_refs"]] + [""]
+    if info.get("references"):
+        lines += ["**References:**", ""] + [f"- <{u}>" for u in info["references"][:8]] + [""]
     for c in cves:
         lines.append(f"- {c}: [NVD](https://nvd.nist.gov/vuln/detail/{c}) · "
                      f"[MITRE](https://www.cve.org/CVERecord?id={c}) · "

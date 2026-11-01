@@ -27,7 +27,8 @@ class DeviceRisk:
 
 
 def breakdown(findings: list[Finding], open_ports: int = 0) -> dict[str, float]:
-    findings = [f for f in findings if not f.patched]   # distro-patched CVEs don't add risk
+    # distro-patched CVEs and unverifiable NVD matches on distro packages don't add risk
+    findings = [f for f in findings if not f.patched and not f.unverified]
     worst_cvss = max((f.cvss for f in findings if f.cvss is not None), default=0.0)
     return {"worst_cvss": worst_cvss, "cvss_points": 6 * worst_cvss,
             "finding_points": min(70.0, sum(f.weight for f in findings)),

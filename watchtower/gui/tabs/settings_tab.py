@@ -8,6 +8,7 @@ from PySide6.QtWidgets import (
     QHBoxLayout,
     QLabel,
     QLineEdit,
+    QPushButton,
     QVBoxLayout,
     QWidget,
 )
@@ -15,6 +16,7 @@ from PySide6.QtWidgets import (
 from watchtower.core.platform_utils import data_dir
 from watchtower.gui.context import AppContext
 from watchtower.gui.theme import apply_theme
+from watchtower.storage.audit_log import Event
 from watchtower.storage.settings import NVD_API_KEY, NVD_ENABLED, THEME
 
 
@@ -30,13 +32,21 @@ class SettingsTab(QWidget):
         self.nvd_key = QLineEdit(ctx.settings.get(NVD_API_KEY, "") or "")
         self.nvd_key.setEchoMode(QLineEdit.EchoMode.Password)
         self.nvd_key.setPlaceholderText("optional, raises rate limit")
-        self.nvd_enabled.toggled.connect(lambda v: ctx.settings.set(NVD_ENABLED, v))
+        self.nvd_enabled.toggled.connect(self._toggle_nvd)
         self.nvd_key.editingFinished.connect(lambda: ctx.settings.set(NVD_API_KEY, self.nvd_key.text().strip()))
         nf = QFormLayout(nvd_box)
         nf.addRow(self.nvd_enabled)
         nf.addRow("NVD API key:", self.nvd_key)
-        nf.addRow(QLabel("Live lookups are wired up in build step 11; until then a bundled "
-                         "local dataset is used."))
+        note = QLabel("When on, Findings can query services.nvd.nist.gov for CVEs matching the service versions "
+                      "nmap found (automatically after each scan, and via “Look up CVEs on NVD”). Results are "
+                      "cached for 7 days. Every request appears in the Command Console and the audit log. "
+                      "A free API key (nvd.nist.gov/developers/request-an-api-key) raises the rate limit from "
+                      "5 to 50 requests per 30 seconds.")
+        note.setWordWrap(True)
+        nf.addRow(note)
+        clear = QPushButton("Clear NVD cache")
+        clear.clicked.connect(lambda: (ctx.nvd.clear(), ctx.bus.audit_finished.emit()))
+        nf.addRow(clear)
 
         # Appearance
         look_box = QGroupBox("Appearance")
@@ -61,6 +71,11 @@ class SettingsTab(QWidget):
         lay.addWidget(sched_box)
         lay.addWidget(info)
         lay.addStretch()
+
+    def _toggle_nvd(self, on: bool):
+        self.ctx.settings.set(NVD_ENABLED, on)
+        self.ctx.audit.append(Event.CONFIRMATION, detail={"action": "NVD lookups " + ("enabled" if on else "disabled")})
+        self.ctx.bus.audit_finished.emit()   # refresh Findings (shows/hides NVD results and button)
 
     def _theme(self, name: str):
         self.ctx.settings.set(THEME, name)

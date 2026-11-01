@@ -135,6 +135,14 @@ MIGRATIONS: list[str] = [
     );
     ALTER TABLE scans ADD COLUMN schedule_id INTEGER;
     """,
+    # 5: NVD lookup cache (opt-in feature)
+    """
+    CREATE TABLE nvd_cache (
+        cpe      TEXT PRIMARY KEY,             -- CPE 2.3 match string queried
+        fetched  TEXT NOT NULL,
+        cves     TEXT NOT NULL                 -- JSON list of parsed CVE summaries
+    );
+    """,
 ]
 
 

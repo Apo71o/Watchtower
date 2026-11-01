@@ -1,0 +1,22 @@
+{
+  "_about": "HAND-WRITTEN sample in the documented NVD CVE API 2.0 response format (the cloud dev environment could not reach services.nvd.nist.gov). Values are illustrative; CVE-2099-0001 is fictitious, and the CVE-2011-2523 text is abbreviated. Replace with a captured response when verifying locally.",
+  "resultsPerPage": 3, "startIndex": 0, "totalResults": 3, "format": "NVD_CVE", "version": "2.0",
+  "timestamp": "2026-11-01T12:00:00.000",
+  "vulnerabilities": [
+    {"cve": {"id": "CVE-2011-2523", "published": "2019-11-27T21:15:11.003", "vulnStatus": "Analyzed",
+      "descriptions": [{"lang": "en", "value": "vsftpd 2.3.4 downloaded between 20110630 and 20110703 contains a backdoor which opens a shell on port 6200/tcp."},
+                       {"lang": "es", "value": "(traducción)"}],
+      "metrics": {"cvssMetricV31": [{"source": "nvd@nist.gov", "type": "Primary",
+          "cvssData": {"version": "3.1", "vectorString": "CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:H/A:H", "baseScore": 9.8, "baseSeverity": "CRITICAL"}}],
+        "cvssMetricV2": [{"source": "nvd@nist.gov", "type": "Primary", "cvssData": {"version": "2.0", "baseScore": 10.0}}]},
+      "weaknesses": [{"source": "nvd@nist.gov", "type": "Primary", "description": [{"lang": "en", "value": "CWE-78"}]}],
+      "references": [{"url": "https://www.exploit-db.com/exploits/49757", "source": "cve@mitre.org", "tags": ["Exploit", "Third Party Advisory"]},
+                     {"url": "https://security-tracker.debian.org/tracker/CVE-2011-2523", "source": "cve@mitre.org", "tags": ["Third Party Advisory"]}]}},
+    {"cve": {"id": "CVE-2099-0001", "published": "2099-01-01T00:00:00.000", "vulnStatus": "Awaiting Analysis",
+      "descriptions": [{"lang": "en", "value": "Fictitious example with only a CVSS v3.0 secondary score."}],
+      "metrics": {"cvssMetricV30": [{"source": "vendor", "type": "Secondary", "cvssData": {"version": "3.0", "vectorString": "CVSS:3.0/AV:N/AC:H/PR:N/UI:N/S:U/C:L/I:N/A:N", "baseScore": 3.7}}]},
+      "weaknesses": [], "references": []}},
+    {"cve": {"id": "CVE-2099-0002", "published": "2099-01-02T00:00:00.000", "vulnStatus": "Rejected",
+      "descriptions": [{"lang": "en", "value": "** REJECT ** Fictitious rejected entry."}], "metrics": {}, "references": []}}
+  ]
+}

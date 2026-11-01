@@ -17,7 +17,7 @@ CVE lookups, off by default.
 
 ## Status
 
-Build steps 1-9 of 11 are done, plus one-click fixes:
+All 11 build steps are done, plus one-click fixes:
 
 - Dependency check with a working one-click installer (live output, password prompt or terminal)
 - **Interfaces:** wireless adapters, monitor-mode support, switch monitor/managed mode
@@ -38,9 +38,12 @@ Build steps 1-9 of 11 are done, plus one-click fixes:
   Wi-Fi scans (evil-twin warning, security downgrades, WPS turned on); scheduled re-scans, optionally
   in the background via a systemd user timer, with desktop notifications on alerts
 - **Report export:** self-contained HTML pentest-style report (optional PDF via WeasyPrint)
+- **Live NVD lookups** (opt-in in Settings): CVEs for every service version nmap identified
 - Audit log viewer/export, command console, help panels, glossary
 
-Next: live NVD lookups behind a Settings toggle (step 11).
+Still to verify on real hardware: monitor-mode Wi-Fi listening, stopping a real systemd service, the
+background systemd timer, and live NVD requests (all unit-tested, but the cloud dev box had no Wi-Fi,
+systemd or NVD access).
 
 ## Continuing development on your own machine
 

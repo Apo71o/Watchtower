@@ -3,6 +3,7 @@ and scan history. Every scope change is written to the audit log."""
 
 from __future__ import annotations
 
+import json
 from dataclasses import fields
 from datetime import datetime, timezone
 
@@ -199,6 +200,30 @@ class ScheduleStore:
 
     def run_now(self, sid: int) -> None:
         self.db.execute("UPDATE schedules SET next_run = ? WHERE id = ?", (now(), sid))
+
+
+class NvdCache:
+    def __init__(self, db: Database):
+        self.db = db
+
+    def get(self, cpe: str, max_age_days: int = 7) -> list[dict] | None:
+        rows = self.db.query("SELECT fetched, cves FROM nvd_cache WHERE cpe = ?", (cpe,))
+        if not rows:
+            return None
+        fetched = datetime.fromisoformat(rows[0]["fetched"])
+        if (datetime.now(timezone.utc) - fetched).days >= max_age_days:
+            return None
+        return json.loads(rows[0]["cves"])
+
+    def put(self, cpe: str, cves: list[dict]) -> None:
+        self.db.execute("INSERT OR REPLACE INTO nvd_cache(cpe, fetched, cves) VALUES (?, ?, ?)",
+                        (cpe, now(), json.dumps(cves)))
+
+    def all(self) -> dict[str, list[dict]]:
+        return {r["cpe"]: json.loads(r["cves"]) for r in self.db.query("SELECT cpe, cves FROM nvd_cache")}
+
+    def clear(self) -> None:
+        self.db.execute("DELETE FROM nvd_cache")
 
 
 class ScanStore:

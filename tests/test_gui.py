@@ -320,3 +320,41 @@ def test_changes_tab_compares_scans_and_wifi(ctx):
     assert tab.sched_table.rowCount() == 1 and tab.sched_table.item(0, 1).text() == "192.168.56.0/24"
     tab.sched_table.item(0, 0).setCheckState(Qt.CheckState.Unchecked)
     assert ctx.schedules.all()[0]["enabled"] == 0
+
+
+def test_nvd_lookup_logs_and_caches(ctx, monkeypatch):
+    import json as _json
+
+    import requests
+
+    from watchtower.gui.tabs.findings_tab import FindingsTab
+    from watchtower.storage.settings import NVD_ENABLED
+    sample = _json.loads((FX / "nvd_api2_sample.json").read_text())
+
+    class Resp:
+        status_code = 200
+
+        def json(self):
+            return sample
+
+    class Sess:
+        def get(self, *a, **k):
+            return Resp()
+
+    monkeypatch.setattr(requests, "Session", Sess)
+    from watchtower.core import nvd as nvd_mod
+    monkeypatch.setattr(nvd_mod, "DELAY_NO_KEY", 0)
+    sid = ctx.scans.start("nmap", "192.168.56.101", "nmap -sV 192.168.56.101")
+    ctx.scans.finish(sid, 0, (FX / "nmap_lab.xml").read_text())
+    tab = FindingsTab(ctx)
+    assert tab.nvd_btn.isHidden()                                   # off by default: no network calls
+    before = tab.table.rowCount()
+    ctx.settings.set(NVD_ENABLED, True)
+    tab.refresh()
+    assert not tab.nvd_btn.isHidden()
+    tab.nvd_lookup()
+    assert wait_for(lambda: not getattr(tab, "_nvd_running", False), 30)
+    assert tab.table.rowCount() == before + 1, tab.nvd_status.text()  # CVE-2099-0001 added; 2011-2523 deduped
+    reqs = [e for e in ctx.audit.entries() if e.event == "network_request"]
+    assert len(reqs) == 1 and "services.nvd.nist.gov" in reqs[0].command
+    assert ctx.nvd.get("cpe:2.3:a:vsftpd:vsftpd:2.3.4")

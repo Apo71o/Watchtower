@@ -11,7 +11,7 @@ from watchtower.core.platform_utils import PlatformInfo
 from watchtower.core.runner import CommandRunner
 from watchtower.storage.audit_log import AuditLog, Entry
 from watchtower.storage.db import Database
-from watchtower.storage.scope import HostAuditStore, NetworkStore, ScanStore, ScheduleStore, TargetStore
+from watchtower.storage.scope import HostAuditStore, NetworkStore, NvdCache, ScanStore, ScheduleStore, TargetStore
 from watchtower.storage.settings import Settings
 
 
@@ -43,6 +43,7 @@ class AppContext:
     scans: ScanStore
     audits: HostAuditStore
     schedules: ScheduleStore
+    nvd: NvdCache
 
     @classmethod
     def create(cls, db: Database, platform: PlatformInfo) -> AppContext:
@@ -54,7 +55,37 @@ class AppContext:
         runner.on_command(lambda cmd, purpose: bus.command_started.emit(cmd, purpose))
         return cls(db, settings, audit, runner, DependencyState(), platform, bus,
                    NetworkStore(db, audit), TargetStore(db, audit), ScanStore(db), HostAuditStore(db),
-                   ScheduleStore(db, audit))
+                   ScheduleStore(db, audit), NvdCache(db))
+
+    def nvd_enabled(self) -> bool:
+        from watchtower.storage.settings import NVD_ENABLED
+        return bool(self.settings.get(NVD_ENABLED, False))
+
+    def nvd_lookup(self, cpes: set[str], progress=None) -> tuple[int, int]:
+        """Fetch uncached CPEs from NVD (blocking; call from a worker). Every request is logged.
+        Returns (CPEs fetched, CVEs found)."""
+        import requests
+
+        from watchtower.core import nvd
+        from watchtower.storage.audit_log import Event
+        from watchtower.storage.settings import NVD_API_KEY
+
+        def on_request(url, params):
+            from urllib.parse import urlencode
+            full = f"GET {url}?{urlencode(params)}"
+            self.audit.append(Event.NETWORK_REQUEST, command=full, detail={"purpose": "NVD CVE lookup"})
+            self.bus.command_started.emit(full, "NVD CVE lookup (network request)")
+
+        client = nvd.NvdClient(requests.Session(), self.settings.get(NVD_API_KEY, "") or "", on_request)
+        todo = sorted(c for c in cpes if self.nvd.get(c) is None)
+        found = 0
+        for i, cpe in enumerate(todo, 1):
+            if progress:
+                progress(f"NVD: {cpe} ({i}/{len(todo)})")
+            cves = client.fetch(cpe)
+            self.nvd.put(cpe, cves)
+            found += len(cves)
+        return len(todo), found
 
 
 __all__ = ["AppContext", "Bus", "Entry"]

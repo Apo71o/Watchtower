@@ -94,6 +94,13 @@ also explain how the attack technique works.
   Redis, RDP, SNMP, plain FTP/HTTP, ...).
 - **nmap vuln scripts:** anything a `--script vuln` run reported as VULNERABLE.
 - **Wi-Fi advisor:** encryption type, WPS, default or hidden SSID.
+- **NVD (optional, off by default):** turn on *live NVD CVE lookups* in Settings
+  and Watchtower asks the National Vulnerability Database which CVEs affect each
+  exact service version nmap identified (its CPE). This is the only feature that
+  makes network requests of its own; each one is shown in the Command Console
+  and audit log, and results are cached for a week. NVD matches on Ubuntu/Debian
+  packages are marked *unverified* and don't count toward the risk score, since
+  the distribution may already have backported the fix.
 
 **One-click fixes:** select a finding and use the **Fix** buttons above its details:
 - *This machine* (where Watchtower runs): install the security update for the
