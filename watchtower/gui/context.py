@@ -96,5 +96,20 @@ class AppContext:
             found += len(cves)
         return len(todo), found
 
+    def pwned_online(self, password: str):
+        """Check one password against HaveIBeenPwned via k-anonymity. Only the first
+        5 hex chars of the SHA-1 are sent; logged as a network request. Blocking."""
+        import requests
+
+        from watchtower.core import pwned_check
+        from watchtower.storage.audit_log import Event
+
+        def on_request(url):
+            self.audit.append(Event.NETWORK_REQUEST, command=f"GET {url}",
+                              detail={"purpose": "Pwned Passwords breach check (SHA-1 prefix only)"})
+            self.bus.command_started.emit(f"GET {url}", "Pwned Passwords check (k-anonymity: hash prefix only)")
+
+        return pwned_check.check_api(password, requests.Session(), on_request=on_request)
+
 
 __all__ = ["AppContext", "Bus", "Entry"]
