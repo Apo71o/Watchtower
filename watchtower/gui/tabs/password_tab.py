@@ -25,6 +25,7 @@ from PySide6.QtWidgets import (
 from watchtower.core import password_strength as ps
 from watchtower.core import pwned_check as pw
 from watchtower.gui.context import AppContext
+from watchtower.gui.ui import tip
 from watchtower.gui.worker import run_in_background
 
 SCORE_COLORS = ["#b71c1c", "#e53935", "#ef6c00", "#2e7d32", "#1b5e20"]
@@ -54,10 +55,14 @@ class StrengthPanel(QWidget):
         self._breached: int | None = None
 
         self.pw_input = QLineEdit()
+        tip(self.pw_input, 'The password to analyze. It never leaves this computer and is never saved or logged.')
         self.pw_input.setEchoMode(QLineEdit.EchoMode.Password)
         self.pw_input.setPlaceholderText("type or paste a password to analyze (stays on this machine)")
         self.show_box = QCheckBox("Show")
+        tip(self.show_box, 'Show the password instead of dots.')
         self.context_input = QLineEdit()
+        tip(self.context_input, ("Words about you or the site (name, email, site name). The analysis flags a password"
+                                 " that contains them, since attackers try those first."))
         self.context_input.setPlaceholderText("optional: your name, email, site — flagged if reused in the password")
 
         top = QFormLayout()
@@ -94,6 +99,7 @@ class StrengthPanel(QWidget):
         self.checklist.horizontalHeader().setSectionResizeMode(1, QHeaderView.ResizeMode.Stretch)
 
         self.breach_btn = QPushButton("Also check this password for breaches")
+        tip(self.breach_btn, 'Send this password to the Breach Check panel and check it there.')
         self.breach_btn.clicked.connect(self._breach_check)
         self.breach_lbl = QLabel()
         self.breach_lbl.setWordWrap(True)
@@ -198,14 +204,19 @@ class BreachPanel(QWidget):
         # mode
         mode_box = QGroupBox("Lookup mode")
         self.online = QRadioButton("Online (HaveIBeenPwned, k-anonymity — only a 5-char hash prefix is sent)")
+        tip(self.online, ("Ask HaveIBeenPwned. Only the first 5 characters of the password's SHA-1 hash are sent; the"
+                          " match is made on this computer."))
         self.offline = QRadioButton("Offline (local Pwned Passwords file — no network at all)")
+        tip(self.offline, 'Search a Pwned Passwords file you downloaded. Nothing is sent anywhere.')
         self.online.setChecked(True)
         grp = QButtonGroup(self)
         grp.addButton(self.online)
         grp.addButton(self.offline)
         self.offline_path = QLineEdit()
+        tip(self.offline_path, "Path to the downloaded Pwned Passwords file (sorted 'HASH:COUNT' lines).")
         self.offline_path.setPlaceholderText("path to a sorted 'HASH:COUNT' file from the HIBP downloader")
         self.offline_browse = QPushButton("Browse…")
+        tip(self.offline_browse, 'Choose the downloaded Pwned Passwords file.')
         self.offline_browse.clicked.connect(self._browse_offline)
         mrow = QHBoxLayout()
         mrow.addWidget(self.offline_path, 1)
@@ -218,9 +229,12 @@ class BreachPanel(QWidget):
         # single
         single_box = QGroupBox("Check one password")
         self.single_input = QLineEdit()
+        tip(self.single_input, 'A password to check against known breaches. Never saved or logged.')
         self.single_input.setEchoMode(QLineEdit.EchoMode.Password)
         self.single_show = QCheckBox("Show")
+        tip(self.single_show, 'Show the password instead of dots.')
         self.single_btn = QPushButton("Check")
+        tip(self.single_btn, 'Check whether this password appears in known data breaches.')
         self.single_result = QLabel()
         self.single_result.setWordWrap(True)
         sr = QHBoxLayout()
@@ -236,7 +250,10 @@ class BreachPanel(QWidget):
         self.batch_input = QPlainTextEdit()
         self.batch_input.setPlaceholderText("one password per line")
         self.batch_import = QPushButton("Import file…")
+        tip(self.batch_import, ("Load passwords from a text file (one per line), for example a password-manager "
+                                "export. Nothing is saved."))
         self.batch_btn = QPushButton("Check all")
+        tip(self.batch_btn, 'Check every password in the list and flag the breached ones.')
         self.batch_status = QLabel()
         self.batch_table = QTableWidget(0, 3)
         self.batch_table.setHorizontalHeaderLabels(["Password", "Breach count", "Status"])

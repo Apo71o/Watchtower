@@ -34,6 +34,7 @@ from watchtower.core.findings_engine import latest_hosts
 from watchtower.core.runner import format_command
 from watchtower.core.targets import parse_target
 from watchtower.gui.context import AppContext
+from watchtower.gui.ui import restore_tip, tip
 from watchtower.gui.worker import run_in_background
 
 
@@ -51,7 +52,10 @@ class HostAuditTab(QWidget):
 
         self.host_list = QListWidget()
         self.host_input = QLineEdit(placeholderText="host or IP (must be an authorized target)")
+        tip(self.host_input, ("Add a host that isn't in the list yet. It must be covered by your authorized targets "
+                              "(Scan a Target)."))
         add_btn = QPushButton("Add")
+        tip(add_btn, 'Add the host you typed to this list.')
         hl = QVBoxLayout()
         hl.addWidget(QLabel("<b>Hosts</b> (scanned and in scope)"))
         hl.addWidget(self.host_list)
@@ -65,8 +69,12 @@ class HostAuditTab(QWidget):
         self.title = QLabel("<i>Select a host</i>")
         tls_box = QGroupBox("TLS audit")
         self.tls_port = QComboBox(editable=True)
+        tip(self.tls_port, 'The port to check. Ports nmap saw speaking TLS are suggested; you can type another.')
         self.tls_backend = QComboBox()
+        tip(self.tls_backend, 'Which TLS checker to use: testssl.sh is more thorough, SSLyze is faster.')
         self.tls_btn = QPushButton("Run TLS audit")
+        tip(self.tls_btn, ("Check the port's TLS versions, ciphers, certificate and known TLS bugs (performs TLS "
+                           "handshakes only)."))
         tf = QFormLayout(tls_box)
         tf.addRow("Port:", self.tls_port)
         tf.addRow("Tool:", self.tls_backend)
@@ -75,9 +83,14 @@ class HostAuditTab(QWidget):
         self.communities = QLineEdit(", ".join(snmp_audit.DEFAULT_COMMUNITIES))
         self.communities.setToolTip("Community strings to test, comma-separated. Add your own to check that it works.")
         self.v1 = QCheckBox("v1", checked=True)
+        tip(self.v1, 'Try SNMP version 1.')
         self.v2c = QCheckBox("v2c", checked=True)
+        tip(self.v2c, 'Try SNMP version 2c.')
         self.snmp_port = QSpinBox(minimum=1, maximum=65535, value=161)
+        tip(self.snmp_port, 'The UDP port SNMP listens on (161 unless you changed it).')
         self.snmp_btn = QPushButton("Run SNMP check")
+        tip(self.snmp_btn, ("Send read-only SNMP GET requests with each community string to see if any grants access."
+                            " Never writes anything."))
         sf = QFormLayout(snmp_box)
         sf.addRow("Communities:", self.communities)
         vrow = QHBoxLayout()
@@ -92,6 +105,7 @@ class HostAuditTab(QWidget):
         boxes.addWidget(tls_box)
         boxes.addWidget(snmp_box)
         self.cancel_btn = QPushButton("Cancel")
+        tip(self.cancel_btn, 'Stop the running check.')
         self.cancel_btn.setEnabled(False)
         self.status = QLabel()
         self.status.setWordWrap(True)
@@ -202,10 +216,10 @@ class HostAuditTab(QWidget):
             self.tls_backend.addItem(name)
         tls_ok = self.tls_backend.count() > 0
         self.tls_btn.setEnabled(in_scope and tls_ok and not busy)
-        self.tls_btn.setToolTip("" if tls_ok else "requires sslyze (pip install sslyze) or testssl.sh")
+        restore_tip(self.tls_btn, "" if tls_ok else "requires sslyze (pip install sslyze) or testssl.sh")
         snmp_ok = bool(deps.find_binary("snmpget"))
         self.snmp_btn.setEnabled(in_scope and snmp_ok and not busy)
-        self.snmp_btn.setToolTip("" if snmp_ok else self.ctx.deps.reason("snmp"))
+        restore_tip(self.snmp_btn, "" if snmp_ok else self.ctx.deps.reason("snmp"))
         if host and not in_scope:
             self.status.setText(f"{host} is no longer covered by your authorized targets.")
 

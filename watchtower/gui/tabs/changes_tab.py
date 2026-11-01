@@ -23,6 +23,7 @@ from PySide6.QtWidgets import (
 from watchtower.core import history_diff, nmap_runner, scheduler, traffic_audit
 from watchtower.core.platform_utils import data_dir
 from watchtower.gui.context import AppContext
+from watchtower.gui.ui import tip
 from watchtower.gui.worker import run_in_background
 from watchtower.storage.audit_log import Event
 from watchtower.storage.settings import SCHED_BACKGROUND
@@ -45,7 +46,9 @@ class ChangesTab(QWidget):
         # ---- history ----
         self.sources = QListWidget()
         self.older = QComboBox()
+        tip(self.older, 'The earlier scan/capture to compare.')
         self.newer = QComboBox()
+        tip(self.newer, 'The later scan/capture to compare.')
         self.summary = QLabel()
         self.summary.setWordWrap(True)
         self.table = QTableWidget(0, 4)
@@ -90,15 +93,22 @@ class ChangesTab(QWidget):
         sh.setSectionResizeMode(QHeaderView.ResizeMode.ResizeToContents)
         sh.setSectionResizeMode(6, QHeaderView.ResizeMode.Stretch)
         self.s_target = QComboBox()
+        tip(self.s_target, 'Which authorized target the scheduled scan covers.')
         self.s_profile = QComboBox()
+        tip(self.s_profile, 'Which nmap profile the scheduled scan uses (Quick scan is a good default).')
         self.s_profile.addItems([p for p in nmap_runner.PROFILES if not p.startswith("Custom")])
         self.s_profile.setCurrentText("Quick scan")
         self.s_interval = QComboBox()
+        tip(self.s_interval, 'How often to repeat the scan.')
         self.s_interval.addItems(list(scheduler.INTERVALS))
         self.s_interval.setCurrentText("Daily")
         add_btn = QPushButton("Add schedule")
+        tip(add_btn, ("Repeat this scan automatically; each run is compared with the previous one and alerts are "
+                      "shown here."))
         self.rm_btn = QPushButton("Remove")
+        tip(self.rm_btn, 'Delete the selected schedule (past scans are kept).')
         self.now_btn = QPushButton("Run now")
+        tip(self.now_btn, 'Run the selected schedule right away.')
         self.bg_box = QCheckBox("Keep running scheduled scans when Watchtower is closed")
         self.bg_box.setToolTip("Installs a systemd user timer (no root) that runs due scans every 15 minutes.")
         self.sched_status = QLabel()

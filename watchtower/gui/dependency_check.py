@@ -23,6 +23,7 @@ from watchtower.core.platform_utils import is_linux
 from watchtower.gui.context import AppContext
 from watchtower.gui.help_panel import TabPage
 from watchtower.gui.run_dialog import RunPlanDialog
+from watchtower.gui.ui import restore_tip, tip
 from watchtower.gui.worker import run_in_background
 
 COLS = ["Tool", "Status", "Version", "Used for", "Install"]
@@ -50,6 +51,11 @@ class DependencyWidget(QWidget):
         self.refresh_btn = QPushButton("Re-check")
         self.install_btn = QPushButton("Run these install commands for me…")
         self.setcap_btn = QPushButton("Grant raw-socket capabilities (setcap)…")
+        tip(self.refresh_btn, "Check again which tools are installed (e.g. after installing something yourself).")
+        tip(self.install_btn, "Install the missing tools with your package manager. Shows every command first and "
+                              "asks for your password.")
+        tip(self.setcap_btn, "Let nmap, airodump-ng and dumpcap capture/scan without running Watchtower as root "
+                             "(runs setcap on those programs after asking for your password).")
         self.setcap_btn.setVisible(is_linux())
         self.status_lbl = QLabel()
         self.refresh_btn.clicked.connect(self.refresh)
@@ -108,7 +114,7 @@ class DependencyWidget(QWidget):
         required_missing = [s for s in missing if not s.tool.optional]
         plan = self._install_plan()
         self.install_btn.setEnabled(bool(plan.steps))
-        self.install_btn.setToolTip("" if plan.steps else "Nothing installable automatically is missing.")
+        restore_tip(self.install_btn, "" if plan.steps else "Nothing installable automatically is missing.")
         self.setcap_btn.setEnabled(bool(deps.setcap_plan(statuses).steps))
         self.status_lbl.setText(
             f"{len(statuses) - len(missing)}/{len(statuses)} tools present. "
@@ -150,6 +156,7 @@ class DependencyDialog(QDialog):
         close = QDialogButtonBox(QDialogButtonBox.StandardButton.Close)
         close.rejected.connect(self.accept)
         close.button(QDialogButtonBox.StandardButton.Close).clicked.connect(self.accept)
+        tip(close.button(QDialogButtonBox.StandardButton.Close), "Close this window. Re-open it any time from Tools.")
         lay = QVBoxLayout(self)
         lay.addWidget(TabPage(self.widget, "deps"))
         lay.addWidget(close)

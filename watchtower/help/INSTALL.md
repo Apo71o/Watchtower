@@ -25,8 +25,12 @@ Then install the security tools you want (or let the Dependency Check screen do 
 after showing you the command):
 
 ```bash
-sudo apt install nmap iw aircrack-ng network-manager snmp testssl.sh nikto
+sudo apt install nmap iw aircrack-ng network-manager snmp testssl.sh nikto tshark
 ```
+
+For Traffic Audit without running Watchtower as root, click **Allow capturing…** in that tab once (it runs
+`setcap cap_net_raw,cap_net_admin+eip` on dumpcap), or answer "Yes" when the tshark package asks whether
+non-superusers may capture and add yourself to the `wireshark` group.
 
 Passive subdomain discovery also works with no tool at all (built-in crt.sh
 search); subfinder or amass add more data sources.
@@ -41,6 +45,8 @@ search); subfinder or amass add more data sources.
 | sslyze *or* testssl.sh | `testssl.sh` (apt) / sslyze: the installer button runs `pip install sslyze` inside Watchtower's environment | TLS audit in Host Audit (optional; either one is enough) |
 | snmpget/snmpwalk | `snmp` | Read-only SNMP community-string check (optional) |
 | Metasploit | [Rapid7 installer](https://docs.metasploit.com/docs/using-metasploit/getting-started/nightly-installers.html) | Module-name cross-reference only (optional) |
+| tshark / dumpcap | `tshark` | Traffic Audit: capture (dumpcap, listen-only) and analysis (tshark) (optional) |
+| Wireshark | `wireshark` | "Open in Wireshark" for a capture (optional) |
 | nikto | `nikto` | Web server scan in Web Audit (optional; run without its default-login plugin and DoS tests) |
 | dnspython | Python package (installed with Watchtower; `pip install dnspython` otherwise) | SPF / DKIM / DMARC lookups in Domain Audit |
 | subfinder | [release binary](https://github.com/projectdiscovery/subfinder/releases) (not packaged by Ubuntu) | Passive subdomain discovery in Domain Audit (optional) |

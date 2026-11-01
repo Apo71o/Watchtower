@@ -38,6 +38,7 @@ from watchtower.core.platform_utils import data_dir, is_linux
 from watchtower.core.risk_scoring import KIND_LABEL
 from watchtower.gui.context import AppContext
 from watchtower.gui.run_dialog import RunPlanDialog
+from watchtower.gui.ui import tip
 from watchtower.gui.worker import run_in_background
 from watchtower.storage.audit_log import Event
 
@@ -92,18 +93,24 @@ class FindingsTab(QWidget):
 
         self.summary = QLabel()
         self.min_sev = QComboBox()
+        tip(self.min_sev, 'Hide findings below this severity.')
         self.min_sev.addItems(["All severities", "Low and above", "Medium and above", "High and above",
                                "Critical only"])
         self.include_unauth = QCheckBox("Include unauthorized Wi-Fi networks")
+        tip(self.include_unauth, ("Also assess nearby Wi-Fi networks you haven't marked Authorized, from what they "
+                                  "broadcast (useful to compare with neighbours; nothing is sent to them)."))
         self.include_unauth.setToolTip("Assess every network seen nearby, not just ones marked Authorized "
                                        "(uses only what they broadcast).")
         self.refresh_btn = QPushButton("Refresh")
+        tip(self.refresh_btn, 'Recalculate findings and risk scores from all stored results.')
         self.nvd_btn = QPushButton("Look up CVEs on NVD")
         self.nvd_btn.setToolTip("Queries the NIST National Vulnerability Database for the service versions nmap "
                                 "found. Enable it in Settings; every request is logged.")
         self.nvd_btn.clicked.connect(lambda: self.nvd_lookup(manual=True))
         self.nvd_status = QLabel()
         self.export_btn = QPushButton("Export report…")
+        tip(self.export_btn, ("Save a self-contained HTML (or PDF) report of these findings with remediation, scope "
+                              "and the commands run."))
         self.export_btn.clicked.connect(self.export_report)
         top = QHBoxLayout()
         top.addWidget(self.summary, 1)
@@ -125,6 +132,7 @@ class FindingsTab(QWidget):
         self.risks.setSortingEnabled(True)
         self.risks.horizontalHeader().setSortIndicator(0, Qt.SortOrder.DescendingOrder)  # highest risk first
         self.show_all_btn = QPushButton("Show all devices")
+        tip(self.show_all_btn, 'Clear the device selection and list findings for every device again.')
         rbox = QWidget()
         rl = QVBoxLayout(rbox)
         rl.setContentsMargins(0, 0, 0, 0)

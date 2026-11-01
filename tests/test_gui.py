@@ -602,3 +602,55 @@ def test_traffic_tab_live_capture_on_loopback(ctx):
     assert Path(row["pcap_path"]).exists() and oct(Path(row["pcap_path"]).stat().st_mode)[-3:] == "600"
     assert "not ether proto 0x888e" in row["command"]
     assert "Live capture on lo" in tab.findings_view.toPlainText()
+
+
+def _untipped_controls(root):
+    """Interactive controls under `root` without a tooltip (internal editors of combo/spin boxes skipped)."""
+    from PySide6.QtWidgets import (
+        QAbstractSpinBox,
+        QCheckBox,
+        QComboBox,
+        QLineEdit,
+        QPushButton,
+        QRadioButton,
+        QSpinBox,
+    )
+    out = []
+    for cls in (QPushButton, QCheckBox, QRadioButton, QComboBox, QLineEdit, QSpinBox):
+        for w in root.findChildren(cls):
+            if w.objectName().startswith("qt_") or isinstance(w.parent(), (QComboBox, QAbstractSpinBox)):
+                continue
+            if not w.toolTip().strip():
+                label = w.text() if hasattr(w, "text") and not isinstance(w, QLineEdit) else ""
+                ph = w.placeholderText() if isinstance(w, QLineEdit) else ""
+                out.append(f"{cls.__name__} {label or ph or w.objectName()!r}")
+    return out
+
+
+def test_every_control_explains_itself(ctx):
+    """GUI clarity rule: every button, checkbox, choice and input on every tab has a tooltip saying what
+    it does (and, when disabled, why). New controls must follow this: use gui.ui.tip()."""
+    from watchtower.gui.main_window import MainWindow
+    from watchtower.help.content import TAB_HELP
+    win = MainWindow(ctx)
+    problems = {}
+    for key, page in win.pages.items():
+        assert TAB_HELP.get(page.help_key if hasattr(page, "help_key") else key, "").strip() or key == "help", key
+        missing = _untipped_controls(page)
+        if missing:
+            problems[key] = missing
+    assert not problems, problems
+    # enabled controls keep their explanation (gates restore it instead of blanking it)
+    win.scan_tab.target.setText("192.168.99.1")
+    QApplication.processEvents()
+    assert win.scan_tab.cancel_btn.toolTip()
+
+
+def test_dialogs_explain_their_controls(ctx):
+    from watchtower.core import deps
+    from watchtower.gui.dependency_check import DependencyDialog
+    from watchtower.gui.report_export import ExportDialog
+    from watchtower.gui.run_dialog import RunPlanDialog
+    for dlg in (ExportDialog(ctx, False, None), DependencyDialog(ctx),
+                RunPlanDialog(ctx, "t", "intro", deps.Plan([deps.Step("x", ["true"])], []))):
+        assert not _untipped_controls(dlg), (type(dlg).__name__, _untipped_controls(dlg))

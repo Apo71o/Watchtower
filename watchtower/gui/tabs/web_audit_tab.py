@@ -31,6 +31,7 @@ from watchtower.core.assessment import WEB_KINDS
 from watchtower.core.runner import format_command
 from watchtower.core.targets import parse_url
 from watchtower.gui.context import AppContext
+from watchtower.gui.ui import restore_tip, tip
 from watchtower.gui.worker import run_in_background
 
 
@@ -49,7 +50,10 @@ class WebAuditTab(QWidget):
 
         self.url_list = QListWidget()
         self.url_input = QLineEdit(placeholderText="https://nas.lan:5001/  (host must be an authorized target)")
+        tip(self.url_input, ("The address of a web page you run, e.g. your router's or NAS's admin page. If its host "
+                             "isn't authorized yet, Watchtower asks first."))
         add_btn = QPushButton("Add")
+        tip(add_btn, 'Add this URL to the list.')
         ll = QVBoxLayout()
         ll.addWidget(QLabel("<b>URLs</b> (on authorized hosts)"))
         ll.addWidget(self.url_list)
@@ -63,6 +67,7 @@ class WebAuditTab(QWidget):
         self.title = QLabel("<i>Add or select a URL</i>")
         hdr_box = QGroupBox("Security headers && cookies")
         self.headers_btn = QPushButton("Check headers")
+        tip(self.headers_btn, 'Request the page once (like a browser) and check its security headers and cookie flags.')
         hf = QVBoxLayout(hdr_box)
         hl = QLabel("Ordinary GET request(s) to the URL, like a browser. Redirects are followed only while they "
                     "stay on authorized hosts.")
@@ -73,6 +78,8 @@ class WebAuditTab(QWidget):
         self.nikto_minutes = QSpinBox(minimum=1, maximum=240, value=30, suffix=" min")
         self.nikto_minutes.setToolTip("nikto -maxtime: stop the scan after this long.")
         self.nikto_btn = QPushButton("Run nikto")
+        tip(self.nikto_btn, ("Scan the web server with nikto for exposed files, outdated software and "
+                             "misconfiguration (without default-login or DoS tests). Takes several minutes."))
         nf = QFormLayout(nikto_box)
         nl = QLabel("Requests thousands of known paths. Runs without nikto's <code>auth</code> plugin (it tries "
                     "default logins) and without its denial-of-service tests.")
@@ -84,6 +91,7 @@ class WebAuditTab(QWidget):
         boxes.addWidget(hdr_box)
         boxes.addWidget(nikto_box)
         self.cancel_btn = QPushButton("Cancel")
+        tip(self.cancel_btn, 'Stop the running check.')
         self.cancel_btn.setEnabled(False)
         self.status = QLabel()
         self.status.setWordWrap(True)
@@ -187,7 +195,7 @@ class WebAuditTab(QWidget):
         self.headers_btn.setEnabled(in_scope and not busy)
         nikto_ok = bool(web_scanner.binary())
         self.nikto_btn.setEnabled(in_scope and nikto_ok and not busy)
-        self.nikto_btn.setToolTip("" if nikto_ok else self.ctx.deps.reason("nikto") or "requires nikto")
+        restore_tip(self.nikto_btn, "" if nikto_ok else self.ctx.deps.reason("nikto") or "requires nikto")
         if url and not in_scope:
             self.status.setText(f"{url}: host isn't covered by your authorized targets.")
 

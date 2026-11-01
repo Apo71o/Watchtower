@@ -25,6 +25,7 @@ from PySide6.QtWidgets import (
 from watchtower.core import history_diff, nmap_runner, report
 from watchtower.core.assessment import assess
 from watchtower.gui.context import AppContext
+from watchtower.gui.ui import restore_tip, tip
 from watchtower.gui.worker import run_in_background
 from watchtower.storage.audit_log import Event
 
@@ -66,12 +67,19 @@ class ExportDialog(QDialog):
         self.author = QLineEdit(getpass.getuser())
         self.include_info = QCheckBox("Include Info-level findings (e.g. CVEs already fixed by distro updates)")
         self.pdf = QCheckBox("Also create a PDF")
+        tip(self.title, "The report's title, shown at the top of the first page.")
+        tip(self.author, "Your name, shown under the title.")
+        tip(self.include_info, "Also list informational findings. Leave off for a shorter report focused on what "
+                               "needs fixing.")
+        tip(self.pdf, "Save a PDF next to the HTML file (needs WeasyPrint).")
         has_pdf = report.pdf_argv("a.html", "a.pdf") is not None
         self.pdf.setEnabled(has_pdf)
-        self.pdf.setToolTip("" if has_pdf else "requires WeasyPrint (sudo apt install weasyprint, or "
+        restore_tip(self.pdf, "" if has_pdf else "requires WeasyPrint (sudo apt install weasyprint, or "
                                                "pip install weasyprint in Watchtower's environment)")
         self.path = QLineEdit(str(Path.home() / "watchtower-report.html"))
         browse = QPushButton("Browse…")
+        tip(self.path, "Where to save the report (a single HTML file you can open in any browser).")
+        tip(browse, "Choose where to save the report.")
         browse.clicked.connect(self._browse)
         prow = QHBoxLayout()
         prow.addWidget(self.path)
@@ -85,6 +93,8 @@ class ExportDialog(QDialog):
         form.addRow(self.include_info)
         form.addRow(self.pdf)
         self.buttons = QDialogButtonBox(QDialogButtonBox.StandardButton.Save | QDialogButtonBox.StandardButton.Cancel)
+        tip(self.buttons.button(QDialogButtonBox.StandardButton.Save), "Write the report to the file above.")
+        tip(self.buttons.button(QDialogButtonBox.StandardButton.Cancel), "Close without saving a report.")
         self.buttons.accepted.connect(self.export)
         self.buttons.rejected.connect(self.reject)
         lay = QVBoxLayout(self)

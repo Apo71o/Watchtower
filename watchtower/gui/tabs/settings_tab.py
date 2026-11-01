@@ -18,6 +18,7 @@ from PySide6.QtWidgets import (
 from watchtower.core.platform_utils import data_dir
 from watchtower.gui.context import AppContext
 from watchtower.gui.theme import apply_theme
+from watchtower.gui.ui import tip
 from watchtower.storage.audit_log import Event
 from watchtower.storage.settings import NVD_API_KEY, NVD_ENABLED, RETENTION_DAYS, THEME
 
@@ -37,9 +38,13 @@ class SettingsTab(QWidget):
 
         # NVD
         nvd_box = QGroupBox("Vulnerability data (NVD)")
-        self.nvd_enabled = QCheckBox("Enable live NVD CVE lookups (off = no outbound network calls)")
+        self.nvd_enabled = QCheckBox("Enable live NVD CVE lookups (sends software names/versions to nvd.nist.gov)")
+        tip(self.nvd_enabled, ("When on, Findings can look up CVEs for discovered software versions on the NIST NVD "
+                               "website. Off by default; every request is logged."))
         self.nvd_enabled.setChecked(bool(ctx.settings.get(NVD_ENABLED, False)))
         self.nvd_key = QLineEdit(ctx.settings.get(NVD_API_KEY, "") or "")
+        tip(self.nvd_key, ("Optional free NVD API key: lookups go about 10x faster. Get one at "
+                           "nvd.nist.gov/developers/request-an-api-key."))
         self.nvd_key.setEchoMode(QLineEdit.EchoMode.Password)
         self.nvd_key.setPlaceholderText("optional, raises rate limit")
         self.nvd_enabled.toggled.connect(self._toggle_nvd)
@@ -55,12 +60,14 @@ class SettingsTab(QWidget):
         note.setWordWrap(True)
         nf.addRow(note)
         clear = QPushButton("Clear NVD cache")
+        tip(clear, 'Forget cached NVD results so the next lookup fetches fresh data.')
         clear.clicked.connect(lambda: (ctx.nvd.clear(), ctx.bus.audit_finished.emit()))
         nf.addRow(clear)
 
         # Appearance
         look_box = QGroupBox("Appearance")
         self.theme = QComboBox()
+        tip(self.theme, "Light, dark, or follow your system's setting.")
         self.theme.addItems(["system", "light", "dark"])
         self.theme.setCurrentText(ctx.settings.get(THEME, "system"))
         self.theme.currentTextChanged.connect(self._theme)
@@ -68,12 +75,15 @@ class SettingsTab(QWidget):
         lf.addRow("Theme:", self.theme)
 
         # Data & history
-        data_box = QGroupBox("Data & history")
+        data_box = QGroupBox("Data && history")
         self.retention = QSpinBox(minimum=0, maximum=3650, value=int(ctx.settings.get(RETENTION_DAYS, 0) or 0))
+        tip(self.retention, ("Automatically delete scans, captures and history older than this many days (0 = keep "
+                             "everything). The audit log and your authorized targets are never deleted."))
         self.retention.setSpecialValueText("keep everything")
         self.retention.setSuffix(" days")
         self.retention.valueChanged.connect(lambda v: ctx.settings.set(RETENTION_DAYS, v))
         self.cleanup_btn = QPushButton("Clean up now")
+        tip(self.cleanup_btn, 'Delete old data now using the setting above, then compact the database.')
         self.cleanup_btn.clicked.connect(self._cleanup)
         self.data_info = QLabel()
         self.data_info.setWordWrap(True)
@@ -101,7 +111,8 @@ class SettingsTab(QWidget):
         total_scans = sum(t["n"] for t in n)
         self.data_info.setText(f"Database size: {_human_size(self.ctx.maintenance.db_size_bytes())} · "
                                f"{total_scans} stored scan(s) across {len(n)} target(s), "
-                               f"{len(self.ctx.networks.snapshots())} Wi-Fi snapshot(s).")
+                               f"{len(self.ctx.networks.snapshots())} Wi-Fi snapshot(s), "
+                               f"{len(self.ctx.captures.all(limit=100_000))} traffic capture(s).")
 
     def _cleanup(self):
         days = self.retention.value()

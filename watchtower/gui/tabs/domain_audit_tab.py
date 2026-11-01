@@ -33,6 +33,7 @@ from watchtower.core.assessment import DOMAIN_KINDS
 from watchtower.core.runner import format_command
 from watchtower.core.targets import normalize_domain
 from watchtower.gui.context import AppContext
+from watchtower.gui.ui import restore_tip, tip
 from watchtower.gui.worker import run_in_background
 
 
@@ -60,8 +61,12 @@ class DomainAuditTab(QWidget):
 
         self.domain_list = QListWidget()
         self.domain_input = QLineEdit(placeholderText="example.com (a domain you own)")
+        tip(self.domain_input, ("A domain you own or administer, e.g. the one in your email address. You'll be asked "
+                                "to confirm."))
         add_btn = QPushButton("Add")
+        tip(add_btn, 'Add the domain to your owned domains (recorded in the audit log).')
         self.remove_btn = QPushButton("Remove")
+        tip(self.remove_btn, 'Remove the selected domain from your owned domains. Past results stay in the history.')
         ll = QVBoxLayout()
         ll.addWidget(QLabel("<b>Domains you own</b>"))
         ll.addWidget(self.domain_list)
@@ -79,6 +84,7 @@ class DomainAuditTab(QWidget):
         self.selectors.setToolTip("Your provider's DKIM selector is the s= value in the DKIM-Signature header of a "
                                   "message you sent. Common ones are tried anyway.")
         self.mail_btn = QPushButton("Check DNS records")
+        tip(self.mail_btn, 'Look up SPF, DKIM, DMARC and MX records in public DNS and check them for mistakes.')
         mf = QFormLayout(mail_box)
         ml = QLabel("Public DNS lookups only (TXT/MX through your resolver). Nothing is sent to your mail servers.")
         ml.setWordWrap(True)
@@ -87,8 +93,13 @@ class DomainAuditTab(QWidget):
         mf.addRow(self.mail_btn)
         sub_box = QGroupBox("Passive subdomain discovery")
         self.sub_backend = QComboBox()
+        tip(self.sub_backend, ("Where to look for subdomains. crt.sh needs no extra tool; subfinder and amass search "
+                               "more sources. Greyed-out entries say why when you hover."))
         self.sub_minutes = QSpinBox(minimum=1, maximum=60, value=10, suffix=" min")
+        tip(self.sub_minutes, 'Give up after this long.')
         self.sub_btn = QPushButton("Find subdomains")
+        tip(self.sub_btn, ("List names under this domain found in public data (Certificate Transparency, passive "
+                           "DNS). Nothing is sent to your servers."))
         sf = QFormLayout(sub_box)
         sl = QLabel("Asks public data sources (Certificate Transparency logs, passive DNS). Never contacts your "
                     "servers; names aren't resolved or probed.")
@@ -101,6 +112,7 @@ class DomainAuditTab(QWidget):
         boxes.addWidget(mail_box)
         boxes.addWidget(sub_box)
         self.cancel_btn = QPushButton("Cancel")
+        tip(self.cancel_btn, 'Stop the running lookup.')
         self.cancel_btn.setEnabled(False)
         self.status = QLabel()
         self.status.setWordWrap(True)
@@ -223,7 +235,7 @@ class DomainAuditTab(QWidget):
         owned = bool(d and self.ctx.domains.covers(d))
         self.remove_btn.setEnabled(bool(d) and not busy)
         self.mail_btn.setEnabled(owned and dns_available() and not busy)
-        self.mail_btn.setToolTip("" if dns_available() else "requires dnspython (pip install dnspython)")
+        restore_tip(self.mail_btn, "" if dns_available() else "requires dnspython (pip install dnspython)")
         self.sub_btn.setEnabled(owned and not busy and self.sub_backend.currentData() is not None)
 
     # ---- running ----

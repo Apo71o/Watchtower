@@ -40,6 +40,9 @@ All 11 build steps are done, plus one-click fixes:
   scan (run without nikto's default-login plugin and DoS tests)
 - **Domain Audit:** SPF / DKIM / DMARC validation of a domain you own (incl. the 10-lookup SPF limit
   and DKIM key sizes) and passive subdomain discovery (subfinder, amass -passive, or built-in crt.sh)
+- **Traffic Audit:** Wireshark-style live capture (dumpcap) or .pcap import, analyzed with tshark into
+  findings: passwords sent unencrypted (never shown or stored), LLMNR/NBT-NS/WPAD, SMBv1, old TLS, UPnP, plain
+  DNS; traffic overview; optional repeating captures compared in What Changed; Open in Wireshark
 - **Password Tools:** strength analyzer (zxcvbn + NIST 800-63B checklist) and breach check
   (Pwned Passwords k-anonymity, or fully offline against a local hash file)
 - **One-click fixes** from Findings: security updates or disabling a risky service on this machine,
@@ -50,7 +53,8 @@ All 11 build steps are done, plus one-click fixes:
   in the background via a systemd user timer, with desktop notifications on alerts
 - **Report export:** self-contained HTML pentest-style report (optional PDF via WeasyPrint)
 - **Live NVD lookups** (opt-in in Settings): CVEs for every service version nmap identified
-- Audit log viewer/export, command console, help panels, glossary
+- Audit log viewer/export, command console, help panels, glossary, a "Where to start" guide, and an
+  explanation (tooltip) on every button and field
 
 Still to verify on real hardware: monitor-mode Wi-Fi listening, stopping a real systemd service, the
 background systemd timer, live NVD requests, real DNS lookups in Domain Audit, and subfinder/amass/crt.sh

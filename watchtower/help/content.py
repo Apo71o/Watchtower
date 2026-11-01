@@ -309,19 +309,27 @@ password has appeared in known breaches — if it has, stop using it.
 ### Audit Log
 **What it does:** a read-only record of everything Watchtower has done: every
 external command (exact command line, start time, exit code), every
-confirmation you gave, every network you marked authorized or unauthorized,
-and any outbound network request (only NVD lookups, and only if you enable them).
+confirmation you gave, every network, host or domain you added to or removed
+from your scope, and every network request Watchtower made itself (NVD lookups,
+breach checks, web header checks, DNS and Certificate Transparency lookups).
+Passwords are never written to it.
 
 The log is **append-only**: the database refuses edits and deletions to it.
 Export it to CSV or JSON for your write-ups.
 """,
 "settings": """
 ### Settings
-- **NVD lookups:** off by default. When off, Watchtower makes no network
-  requests of its own at all. When on, it queries the NIST National
-  Vulnerability Database for CVEs matching discovered service versions.
-  An API key raises NVD's rate limit.
-- **Theme** and **scheduler** options.
+- **Vulnerability data (NVD):** off by default. When on, Findings looks up
+  known vulnerabilities (CVEs) for the software versions nmap found, on the
+  NIST National Vulnerability Database website. A free API key makes lookups
+  faster. Every request is logged.
+- **Data & history:** automatically delete old scans, captures and history
+  after a number of days, or clean up now. The audit log and your authorized
+  targets are never deleted.
+- **Appearance:** light, dark or system theme.
+
+Scheduled scans are set up in **What Changed**; repeating traffic captures in
+**Traffic Audit**.
 """,
 "help": """
 ### Help

@@ -16,6 +16,7 @@ from PySide6.QtWidgets import QDialog, QHBoxLayout, QLabel, QMessageBox, QPlainT
 from watchtower.core import deps
 from watchtower.core.runner import CommandUnavailable, format_command
 from watchtower.gui.context import AppContext
+from watchtower.gui.ui import tip
 from watchtower.gui.worker import run_in_background
 from watchtower.storage.audit_log import Event
 
@@ -48,6 +49,9 @@ class RunPlanDialog(QDialog):
         self.run_btn.setDefault(True)
         self.run_btn.setEnabled(bool(plan.steps))
         self.close_btn = QPushButton("Cancel")
+        tip(self.copy_btn, "Copy the commands so you can run them yourself in a terminal instead.")
+        tip(self.run_btn, "Run the commands shown above. You may be asked for your password.")
+        tip(self.close_btn, "Close without running anything (or close the window when finished).")
         self.run_btn.clicked.connect(self._run)
         self.close_btn.clicked.connect(self._close)
         row = QHBoxLayout()

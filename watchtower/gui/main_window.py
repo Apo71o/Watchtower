@@ -88,7 +88,9 @@ class MainWindow(QMainWindow):
         dock.setFeatures(QDockWidget.DockWidgetFeature.DockWidgetMovable
                          | QDockWidget.DockWidgetFeature.DockWidgetFloatable)
         self.addDockWidget(Qt.DockWidgetArea.BottomDockWidgetArea, dock)
-        self.resizeDocks([dock], [150], Qt.Orientation.Vertical)
+        self.resizeDocks([dock], [120], Qt.Orientation.Vertical)
+        self.console.setToolTip("Every command and network request Watchtower makes, shown before it starts. The same "
+                                "entries are kept in the Audit Log tab.")
         ctx.bus.command_started.connect(self._show_command)
         ctx.bus.request_scan.connect(lambda _t: self.tabs.setCurrentWidget(self.pages["scan"]))
 
@@ -124,6 +126,7 @@ class MainWindow(QMainWindow):
         self.ctx.settings.set(DEPS_REVIEWED, True)
 
     def first_run(self):
-        """Show the dependency check once, on the very first launch."""
+        """On the very first launch: open Help's "Where to start" page and show the dependency check once."""
         if not self.ctx.settings.get(DEPS_REVIEWED):
+            self.tabs.setCurrentWidget(self.pages["help"])
             self.show_dependency_check()

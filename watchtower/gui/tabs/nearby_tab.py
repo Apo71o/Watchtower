@@ -22,6 +22,7 @@ from watchtower.core.platform_utils import WIFI_UNSUPPORTED_REASON
 from watchtower.core.runner import format_command
 from watchtower.gui.context import AppContext
 from watchtower.gui.tabs.interfaces_tab import ask_switch_to_monitor
+from watchtower.gui.ui import restore_tip, tip
 from watchtower.gui.worker import run_in_background
 
 COLS = ["Authorized", "SSID", "BSSID", "Ch", "Signal", "Security", "Auth", "Cipher", "WPS", "Clients",
@@ -41,14 +42,23 @@ class NearbyTab(QWidget):
         self._loading = False
 
         self.method = QComboBox()
+        tip(self.method, ("How to find networks. Managed scan: what your Wi-Fi menu does, keeps you connected. "
+                          "Monitor-mode listen: passive airodump-ng listening that also shows client devices (needs a"
+                          " monitor-capable adapter)."))
         self.method.addItems([MANAGED, MONITOR])
         self.iface = QComboBox()
+        tip(self.iface, 'The Wi-Fi adapter to scan with.')
         self.tool = QComboBox()
+        tip(self.tool, ("Which program does a managed scan. nmcli needs no password; iw asks for your password but "
+                        "also shows whether WPS is on."))
         self.tool_lbl = QLabel("Tool:")
         self.duration = QSpinBox(minimum=5, maximum=3600, value=30, suffix=" s")
+        tip(self.duration, 'How long to listen in monitor mode. Longer listening sees more client devices.')
         self.band = QComboBox()
+        tip(self.band, 'Which Wi-Fi bands to listen on in monitor mode (2.4 GHz, 5 GHz or both).')
         self.band.addItems(list(BANDS))
         self.scan_btn = QPushButton("Scan")
+        tip(self.scan_btn, 'Look for nearby Wi-Fi networks with the method chosen on the left.')
         self.scan_btn.setDefault(True)
         self.status = QLabel()
         self.status.setWordWrap(True)
@@ -87,7 +97,11 @@ class NearbyTab(QWidget):
         self.stations.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
         self.stations.horizontalHeader().setStretchLastSection(True)
         self.investigate_btn = QPushButton("Investigate (scan hosts on this network)…")
+        tip(self.investigate_btn, ("Add this network's subnet to your authorized targets and open Scan a Target, to "
+                                   "see which devices are on it. Only for networks you ticked Authorized."))
         self.forget_btn = QPushButton("Forget unauthorized networks")
+        tip(self.forget_btn, ("Remove every network you haven't ticked Authorized (and their client devices) from "
+                              "Watchtower's database. Your authorized networks are kept."))
         btns = QHBoxLayout()
         btns.addWidget(self.investigate_btn)
         btns.addStretch()
@@ -178,7 +192,7 @@ class NearbyTab(QWidget):
             ok = bool(wifi_scan.available_managed_tools())
             why = "requires nmcli (network-manager) or iw"
         self.scan_btn.setEnabled(ok)
-        self.scan_btn.setToolTip("" if ok else why)
+        restore_tip(self.scan_btn, "" if ok else why)
 
     # ---- scanning ----
     def _selected_iface(self) -> interfaces.WirelessInterface | None:
@@ -314,7 +328,7 @@ class NearbyTab(QWidget):
     def _selection_changed(self):
         n = self._selected()
         self.investigate_btn.setEnabled(bool(n and n["authorized"]))
-        self.investigate_btn.setToolTip("" if n and n["authorized"] else "Tick Authorized for this network first.")
+        restore_tip(self.investigate_btn, "" if n and n["authorized"] else "Tick Authorized for this network first.")
         if not n:
             self.detail.setText("Select a network.")
             self.stations.setRowCount(0)

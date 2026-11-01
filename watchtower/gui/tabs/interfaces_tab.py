@@ -16,6 +16,7 @@ from watchtower.core import interfaces
 from watchtower.core.platform_utils import WIFI_UNSUPPORTED_REASON
 from watchtower.gui.context import AppContext
 from watchtower.gui.run_dialog import RunPlanDialog
+from watchtower.gui.ui import restore_tip, tip
 from watchtower.gui.worker import run_in_background
 
 COLS = ["Interface", "Mode", "Monitor mode", "Driver", "MAC", "Connected to", "Channel", "IP addresses"]
@@ -35,8 +36,14 @@ class InterfacesTab(QWidget):
         self.table.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.ResizeToContents)
         self.table.horizontalHeader().setStretchLastSection(True)
         self.refresh_btn = QPushButton("Refresh")
+        tip(self.refresh_btn, 'Read the list of wireless interfaces again (runs iw dev / iw list; read-only).')
         self.monitor_btn = QPushButton("Enable monitor mode…")
+        tip(self.monitor_btn, ("Switch the selected Wi-Fi adapter to monitor mode for passive listening in Nearby "
+                               "Networks. Shows the commands and asks first; your Wi-Fi connection on that adapter "
+                               "drops while it's in monitor mode."))
         self.managed_btn = QPushButton("Return to managed mode…")
+        tip(self.managed_btn, ("Switch the selected adapter back to normal (managed) mode and hand it back to "
+                               "NetworkManager so it reconnects."))
         self.status = QLabel()
         self.status.setWordWrap(True)
         self.refresh_btn.clicked.connect(self.refresh)
@@ -64,7 +71,7 @@ class InterfacesTab(QWidget):
             return
         ok = self.ctx.deps.available("iw")
         self.refresh_btn.setEnabled(ok)
-        self.refresh_btn.setToolTip("" if ok else self.ctx.deps.reason("iw"))
+        restore_tip(self.refresh_btn, "" if ok else self.ctx.deps.reason("iw"))
         if ok and not self.ifaces:
             self.refresh()
         elif not ok:
@@ -111,7 +118,7 @@ class InterfacesTab(QWidget):
         if i and not i.monitor_capable:
             self.monitor_btn.setToolTip(f"{i.name}'s driver ({i.driver or 'unknown'}) does not support monitor mode.")
         else:
-            self.monitor_btn.setToolTip("")
+            restore_tip(self.monitor_btn)
 
     def _set_mode(self, mode: str):
         i = self.selected()

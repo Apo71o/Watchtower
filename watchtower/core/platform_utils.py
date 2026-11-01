@@ -125,7 +125,7 @@ class PlatformInfo:
         distro = " (Debian family)" if self.debian_like else ""
         return (
             f"{self.system} {self.release}{distro}, {self.machine}, "
-            f"Python {self.python}, elevated={self.elevated}"
+            f"Python {self.python}" + (", running as administrator/root" if self.elevated else "")
         )
 
 

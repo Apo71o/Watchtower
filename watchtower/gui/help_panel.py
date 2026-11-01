@@ -13,6 +13,8 @@ class HelpPanel(QWidget):
         super().__init__(parent)
         self.toggle = QToolButton(text="(?) What is this?", checkable=True, checked=True)
         self.toggle.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonTextOnly)
+        self.toggle.setToolTip("Show or hide the explanation of this tab: what it does, why it matters and how to "
+                               "read the results.")
         self.browser = QTextBrowser(openExternalLinks=True)
         self.browser.setMarkdown(TAB_HELP.get(help_key, "_No help written for this tab yet._"))
         self.browser.setMinimumWidth(260)

@@ -13,6 +13,7 @@ from PySide6.QtWidgets import (
 )
 
 from watchtower.gui.context import AppContext
+from watchtower.gui.ui import tip
 from watchtower.storage.audit_log import Entry
 
 COLS = ["#", "Time (UTC)", "Event", "Command", "Target", "Exit", "Detail"]
@@ -32,7 +33,9 @@ class AuditLogTab(QWidget):
             hh.setSectionResizeMode(i, QHeaderView.ResizeMode.ResizeToContents)
         hh.setSectionResizeMode(3, QHeaderView.ResizeMode.Stretch)
         csv_btn = QPushButton("Export CSV…")
+        tip(csv_btn, 'Save the whole audit log as a CSV spreadsheet.')
         json_btn = QPushButton("Export JSON…")
+        tip(json_btn, 'Save the whole audit log as JSON.')
         csv_btn.clicked.connect(lambda: self._export("csv"))
         json_btn.clicked.connect(lambda: self._export("json"))
         self.count_lbl = QLabel()

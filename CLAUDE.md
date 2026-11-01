@@ -44,7 +44,8 @@ the "User decisions" section below wins over the spec.
    public DNS TXT/MX lookups via the system resolver, and passive subdomain sources (subfinder/amass
    query third-party data sets; crt.sh is one HTTPS GET). Web Audit's header check is an HTTP GET to
    an authorized URL (same scope rule as nmap). All of these are logged as `Event.NETWORK_REQUEST`
-   (via `AppContext.log_network`) or go through CommandRunner.
+   (via `AppContext.log_network`) or go through CommandRunner. Traffic Audit makes no network calls
+   (dumpcap listens passively; tshark analyzes locally).
 5. **Ask the user** before touching system Wi-Fi interface settings (monitor
    mode) or running anything with sudo/pkexec. Show the command, then confirm.
 6. **Read-only SNMP:** GET/WALK only, never SET.
@@ -68,6 +69,9 @@ watchtower/
   core/web_scanner.py    nikto argv (-Plugins "@@DEFAULT;-auth" -Tuning x6), XML parser, description-based rating
   core/domain_audit.py   SPF/DKIM/DMARC: pure analysis over a resolve(name, rdtype) callable; dns_resolver() (dnspython)
   core/subdomain_enum.py passive only: subfinder / amass enum -passive (refused if absent) / crt.sh; parsers
+  core/traffic_audit.py  dumpcap capture argv (EAPOL always excluded, monitor-mode refused), tshark FIELDS ->
+                         parse_fields() -> Event (names only, never secrets) -> findings(); stats; diff_captures()
+  gui/ui.py              tip()/restore_tip(): every control's tooltip (enforced by test_every_control_explains_itself)
   storage/db.py          SQLite + MIGRATIONS list (append new entries, never edit old ones)
   storage/audit_log.py   append-only log (DB triggers block UPDATE/DELETE); Event enum
   storage/settings.py    JSON key/value settings + well-known keys
@@ -100,6 +104,13 @@ docs/SPEC.md             original build prompt (authoritative requirements)
   as the feature. Explanatory text is a core deliverable.
 - When replacing a `PlaceholderTab`, keep the help key and tab order (the GUI test checks the labels).
 - After editing `INSTALL.md`: `cp INSTALL.md watchtower/help/INSTALL.md`.
+- **GUI clarity (user requirement, 2026-11-01):** the GUI must be clear and easy to use for every feature.
+  Every button/checkbox/choice/input gets `gui.ui.tip(widget, "what it does")`; gates that disable a control
+  call `restore_tip(widget, "" if ok else "why it's disabled")` instead of blanking the tooltip. Tests
+  `test_every_control_explains_itself` / `test_dialogs_explain_their_controls` fail on any control without
+  one. Also: empty states say what to do next, results say what was found + why it matters + how to fix,
+  plain words over jargon (add a glossary entry when a term is unavoidable), and Help -> Overview's
+  "Where to start" table must list every tab's main use (WHERE_TO_START in gui/tabs/help_tab.py).
 - Before committing: `.venv/bin/ruff check watchtower tests && .venv/bin/pytest -q`.
 
 ## Known gaps / notes for later steps
@@ -242,6 +253,23 @@ Same rules: authorized/own targets only, ownership gate for new target types, ev
   amass build still has `enum -passive`; a nikto 2.5 run (its XML layout was hand-written in the test).
   Ubuntu's nikto 2.1.5 prints a bogus "ERROR: Host maximum execution time ... reached" at start with any
   -maxtime but scans normally. The cloud container strips /usr/share/doc, so nikto's DTD was missing there.
+- [x] Traffic Audit tab (gui/tabs/traffic_tab.py, after Domain Audit; user-requested 2026-11-01): live capture
+      (dumpcap; filter always ANDed with `not ether proto 0x888e`; refused on monitor-mode interfaces; files in
+      data_dir/captures, 0600, "owned") or open a pcap (never copied/deleted). tshark fields pass keeps only command/
+      scheme NAMES (FTP USER/PASS, HTTP Basic, form field names, IMAP LOGIN, SMTP AUTH), masks SNMP communities;
+      telnet.data/ftp args/smtp params are deliberately not extracted; CommandRunner logs commands, not output.
+      Findings (kind "traffic", device = IP so they merge with nmap hosts): cleartext logins (High), SNMP (High if
+      default community), SMBv1, LLMNR/NBT-NS + WPAD (Medium), mDNS/plain DNS (Info), UPnP NOTIFY (Low), server-chosen
+      old TLS / broken cipher, client max TLS < 1.2. captures + capture_schedules (migration 7); assess(captures=
+      CaptureStore.latest_per_source()); scheduler.run_capture_schedule() (run_due with the capture stores, GUI tick
+      + headless); What Changed lists "Traffic on <iface>" sources and diffs them. "Allow capturing…" = setcap plan
+      on dumpcap (Tool needs_raw_sockets). Fixture traffic_lab.pcapng is a REAL loopback capture of generated lab
+      traffic (fake 's3cret-*' passwords); traffic_fields.tsv/traffic_stats.txt are tshark 4.2.2 output. This
+      OpenSSL had no 3DES, so weak-cipher detection is unit-tested with synthetic rows. Verify locally: capture on
+      your real LAN/Wi-Fi interface without root after "Allow capturing…", and Open in Wireshark.
+- [x] GUI clarity pass (2026-11-01): tooltips on every control (gui/ui.py + enforcing tests), Help Overview rewritten
+      with a "Where to start" goal->tab table and accurate network-call list, first launch opens Help, stale help
+      texts fixed (Audit Log, Settings), "Data && history" mnemonic bug, plain status bar, NVD checkbox label.
 - hashcat v6 changed --outfile-format to a comma list (1,2 = hash:plain); we read the POTFILE
   instead (always hash:plain). hashcat needs --force on CPU-only boxes. The container's `john` is
   the limited "core" build (no --pot=, few formats); real crack tests use hashcat.

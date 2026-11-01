@@ -35,6 +35,7 @@ from watchtower.core import nmap_runner as nr
 from watchtower.core.platform_utils import is_linux, is_windows, relaunch_as_admin
 from watchtower.core.runner import format_command
 from watchtower.gui.context import AppContext
+from watchtower.gui.ui import restore_tip, tip
 from watchtower.gui.worker import run_in_background
 
 STATE_COLORS = {"open": "#2e7d32", "filtered": "#9e6a00", "closed": "#757575"}
@@ -55,9 +56,15 @@ class ScanTab(QWidget):
         tgt_box = QGroupBox("Authorized targets")
         self.tgt_list = QListWidget()
         self.tgt_input = QLineEdit(placeholderText="IP, CIDR, range or hostname")
+        tip(self.tgt_input, ("A host or network you own or may test: 192.168.1.10, 192.168.1.0/24, 192.168.1.1-50 or "
+                             "nas.lan. Only targets on this list can ever be scanned."))
         add_btn = QPushButton("Add")
+        tip(add_btn, 'Add what you typed to the authorized targets (recorded in the audit log).')
         rm_btn = QPushButton("Remove")
+        tip(rm_btn, "Remove the selected authorized target. It can't be scanned any more (recorded in the audit log).")
         self.subnet_btn = QPushButton("Add one of my subnets…")
+        tip(self.subnet_btn, ("Pick one of the networks this computer is connected to and add it as an authorized "
+                              "target."))
         self.subnet_btn.setVisible(is_linux())
         tl = QVBoxLayout(tgt_box)
         tl.addWidget(QLabel("Only targets inside these entries can be scanned."))
@@ -89,12 +96,17 @@ class ScanTab(QWidget):
 
         # --- scan form ---
         self.target = QLineEdit(placeholderText="e.g. 192.168.1.10  or  192.168.1.0/24")
+        tip(self.target, 'What to scan now. It must lie inside one of the authorized targets on the left.')
         self.profile = QComboBox()
+        tip(self.profile, ("A ready-made set of nmap options (Zenmap's standard profiles). The description below says"
+                           " what each one does and how long it takes."))
         for name, (args, desc) in nr.PROFILES.items():
             self.profile.addItem(name)
-            tip = (f"nmap {' '.join(args)}\n\n" if args else "") + desc
-            self.profile.setItemData(self.profile.count() - 1, tip, Qt.ItemDataRole.ToolTipRole)
+            item_tip = (f"nmap {' '.join(args)}\n\n" if args else "") + desc
+            self.profile.setItemData(self.profile.count() - 1, item_tip, Qt.ItemDataRole.ToolTipRole)
         self.scan_type = QComboBox()
+        tip(self.scan_type, ("How nmap probes ports (SYN, connect, UDP, ...). 'Default' lets nmap choose; each type "
+                             "is explained when you pick it."))
         for name, (_flag, desc) in nr.SCAN_TYPES.items():
             self.scan_type.addItem(name)
             self.scan_type.setItemData(self.scan_type.count() - 1, desc, Qt.ItemDataRole.ToolTipRole)
@@ -104,18 +116,27 @@ class ScanTab(QWidget):
         self.explain.setAlignment(Qt.AlignmentFlag.AlignTop | Qt.AlignmentFlag.AlignLeft)
         self.explain.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Maximum)
         self.os_detect = QCheckBox("OS detection (-O)")
+        tip(self.os_detect, ("Ask nmap to guess each host's operating system (needs raw-socket permission or the "
+                             "password prompt)."))
         self.all_ports = QCheckBox("All TCP ports (-p-)")
+        tip(self.all_ports, ("Scan all 65,535 TCP ports instead of the 1,000 most common. Much slower, but finds "
+                             "services on unusual ports."))
         self.vuln = QCheckBox("Vulnerability scripts (--script vuln)")
         self.vuln.setToolTip("Runs nmap's vuln NSE scripts. Some send real exploit-style probes and can crash "
                              "fragile devices. Only use on hosts you're OK stressing.")
         self.extra = QLineEdit(placeholderText="any nmap options, e.g.  -p 1-1024 -Pn --script http-title,ssl-cert")
+        tip(self.extra, ("Any extra nmap options. Targets written here must also be authorized. The full command is "
+                         "previewed below before you run it."))
         self.preview = QLabel()
         self.preview.setWordWrap(True)
         self.preview.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
         self.preview.setFont(QFont("monospace"))
         self.run_btn = QPushButton("Run scan")
+        tip(self.run_btn, ("Run nmap with the command shown above. Output appears live; results are saved to Scan "
+                           "history and feed Findings."))
         self.run_btn.setDefault(True)
         self.cancel_btn = QPushButton("Cancel")
+        tip(self.cancel_btn, 'Stop the running scan.')
         self.cancel_btn.setEnabled(False)
         self.status = QLabel()
         self.status.setWordWrap(True)
@@ -235,7 +256,7 @@ class ScanTab(QWidget):
         ping_only = nr.profile_is_ping_only(self.profile.currentText())
         self.scan_type.setEnabled(not ping_only)
         self.all_ports.setEnabled(not ping_only)
-        self.scan_type.setToolTip("Ping-only profiles don't scan ports." if ping_only else "")
+        restore_tip(self.scan_type, "Ping-only profiles don't scan ports." if ping_only else "")
         prof_args, prof_desc = nr.PROFILES[self.profile.currentText()]
         text = f"<b>{_esc(self.profile.currentText())}</b>"
         if prof_args:
@@ -314,7 +335,7 @@ class ScanTab(QWidget):
         self.results_tabs.setCurrentWidget(self.output)
         self.run_btn.setEnabled(False)
         self.cancel_btn.setEnabled(not elevated_run)
-        self.cancel_btn.setToolTip("Can't cancel a scan running as root from here." if elevated_run else "")
+        restore_tip(self.cancel_btn, "Can't cancel a scan running as root from here." if elevated_run else "")
         self.status.setText(f"Scanning {target}…")
 
         def _work():
