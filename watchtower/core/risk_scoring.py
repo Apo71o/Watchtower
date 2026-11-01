@@ -23,12 +23,20 @@ class DeviceRisk:
     worst: str
     findings: list[Finding] = field(default_factory=list)
     open_ports: int = 0
+    breakdown: dict[str, float] = field(default_factory=dict)
+
+
+def breakdown(findings: list[Finding], open_ports: int = 0) -> dict[str, float]:
+    findings = [f for f in findings if not f.patched]   # distro-patched CVEs don't add risk
+    worst_cvss = max((f.cvss for f in findings if f.cvss is not None), default=0.0)
+    return {"worst_cvss": worst_cvss, "cvss_points": 6 * worst_cvss,
+            "finding_points": min(70.0, sum(f.weight for f in findings)),
+            "port_points": float(min(15, open_ports))}
 
 
 def score(findings: list[Finding], open_ports: int = 0) -> int:
-    worst_cvss = max((f.cvss for f in findings if f.cvss is not None), default=0.0)
-    weights = min(70.0, sum(f.weight for f in findings))
-    return int(round(min(100.0, 6 * worst_cvss + weights + min(15, open_ports))))
+    b = breakdown(findings, open_ports)
+    return int(round(min(100.0, b["cvss_points"] + b["finding_points"] + b["port_points"])))
 
 
 def rank(findings: list[Finding], open_ports: dict[str, int] | None = None) -> list[DeviceRisk]:
@@ -42,7 +50,8 @@ def rank(findings: list[Finding], open_ports: dict[str, int] | None = None) -> l
     for dev, fs in by_dev.items():
         kind = "wifi" if any(f.kind == "wifi" for f in fs) else "host"
         label = fs[0].device_label if fs else dev
-        worst = min((f.severity for f in fs), key=lambda s: SEV_RANK[s], default="Info")
-        out.append(DeviceRisk(dev, label, kind, score(fs, open_ports.get(dev, 0)), worst, fs, open_ports.get(dev, 0)))
+        worst = min((f.severity for f in fs if not f.patched), key=lambda s: SEV_RANK[s], default="Info")
+        ports = open_ports.get(dev, 0)
+        out.append(DeviceRisk(dev, label, kind, score(fs, ports), worst, fs, ports, breakdown(fs, ports)))
     out.sort(key=lambda d: (-d.score, SEV_RANK[d.worst], d.label))
     return out

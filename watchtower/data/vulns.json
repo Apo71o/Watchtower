@@ -1,69 +1,327 @@
 {
-  "_about": "Small bundled sample of well-known, version-detectable vulnerabilities (build step 4). Matching is by nmap's product/version strings, so treat hits as 'probable': Linux distributions often backport fixes without changing the upstream version number. Live NVD lookups (step 11) extend this. Fields: product = case-insensitive regex on nmap's product; ranges = list of [min_inclusive, max_exclusive] ('' = unbounded); 'exact' versions alternatively.",
-  "entries": [
-    {"product": "^vsftpd$", "exact": ["2.3.4"], "cve": "CVE-2011-2523", "cvss": 9.8,
-     "title": "vsftpd 2.3.4 backdoor",
-     "description": "The vsftpd 2.3.4 source archive was replaced with a backdoored copy in 2011. Logging in with a username ending in ':)' opens a root shell on TCP port 6200.",
-     "remediation": "Replace vsftpd with a current version from your distribution and treat the host as compromised: rebuild it from a clean image."},
-    {"product": "^ProFTPD$", "exact": ["1.3.5"], "cve": "CVE-2015-3306", "cvss": 9.8,
-     "title": "ProFTPD 1.3.5 mod_copy unauthenticated file copy",
-     "description": "mod_copy's SITE CPFR/CPTO commands work without logging in, letting anyone copy files on the server, for example placing a PHP shell in the web root.",
-     "remediation": "Upgrade ProFTPD to 1.3.5a or later, or disable mod_copy."},
-    {"product": "^OpenSSH$", "ranges": [["8.5p1", "9.8p1"]], "cve": "CVE-2024-6387", "cvss": 8.1,
-     "title": "OpenSSH regreSSHion (signal handler race)",
-     "description": "A race condition in sshd's SIGALRM handler can allow unauthenticated remote code execution as root on glibc-based Linux. Exploitation is slow and timing-dependent, but practical.",
-     "remediation": "Update OpenSSH to 9.8p1 or later (or your distribution's patched package; Debian/Ubuntu backported the fix without changing the 8.x/9.x version). As a stopgap set LoginGraceTime 0 in sshd_config (this trades the RCE risk for easier connection exhaustion)."},
-    {"product": "^OpenSSH$", "ranges": [["", "7.8"]], "cve": "CVE-2018-15473", "cvss": 5.3,
-     "title": "OpenSSH username enumeration",
-     "description": "Differences in how sshd answers malformed public-key authentication requests reveal whether a username exists, helping an attacker target password guessing.",
-     "remediation": "Upgrade OpenSSH to 7.8 or later; use key-only authentication and fail2ban or similar rate limiting."},
-    {"product": "^Apache httpd$", "exact": ["2.4.49"], "cve": "CVE-2021-41773", "cvss": 7.5,
-     "title": "Apache 2.4.49 path traversal",
-     "description": "A flaw in path normalization lets crafted URLs (encoded '../') read files outside the document root, and run commands if mod_cgi is enabled.",
-     "remediation": "Upgrade Apache httpd to 2.4.51 or later. Make sure 'Require all denied' protects the filesystem root."},
-    {"product": "^Apache httpd$", "exact": ["2.4.49", "2.4.50"], "cve": "CVE-2021-42013", "cvss": 9.8,
-     "title": "Apache 2.4.49/2.4.50 path traversal and RCE",
-     "description": "The fix for CVE-2021-41773 in 2.4.50 was incomplete: double-encoded traversal still reaches files outside the web root, and leads to remote code execution with mod_cgi.",
-     "remediation": "Upgrade Apache httpd to 2.4.51 or later."},
-    {"product": "^Apache httpd$", "ranges": [["2.4.0", "2.4.56"]], "cve": "CVE-2023-25690", "cvss": 9.8,
-     "title": "Apache mod_proxy HTTP request smuggling",
-     "description": "Some mod_proxy configurations using RewriteRule or ProxyPassMatch with user-supplied URL data allow request smuggling, bypassing access controls on the proxy. Only affects servers using that configuration.",
-     "remediation": "Upgrade Apache httpd to 2.4.56 or later."},
-    {"product": "^nginx$", "ranges": [["0.6.18", "1.20.1"]], "cve": "CVE-2021-23017", "cvss": 7.7,
-     "title": "nginx resolver off-by-one",
-     "description": "When the 'resolver' directive is used, a crafted DNS response can cause a 1-byte memory overwrite, crashing the worker and possibly allowing code execution.",
-     "remediation": "Upgrade nginx to 1.20.1 / 1.21.0 or later, or avoid the resolver directive."},
-    {"product": "^Exim smtpd$", "ranges": [["4.87", "4.92"]], "cve": "CVE-2019-10149", "cvss": 9.8,
-     "title": "Exim 'Return of the WIZard' remote command execution",
-     "description": "Improper validation of recipient addresses lets a remote attacker run commands as root in default configurations.",
-     "remediation": "Upgrade Exim to 4.92 or later."},
-    {"product": "^dnsmasq$", "ranges": [["", "2.78"]], "cve": "CVE-2017-14491", "cvss": 9.8,
-     "title": "dnsmasq DNS heap overflow",
-     "description": "A crafted DNS response causes a heap overflow in dnsmasq (common on routers), allowing remote code execution.",
-     "remediation": "Update the router firmware or dnsmasq to 2.78 or later. If the vendor no longer ships updates, replace the device."},
-    {"product": "^Samba smbd$", "ranges": [["3.5.0", "4.6.4"]], "cve": "CVE-2017-7494", "cvss": 9.8,
-     "title": "SambaCry: shared-library upload to RCE",
-     "description": "A client with write access to a share can upload a shared library and make smbd load it, running code as root. Patched in 4.4.14, 4.5.10 and 4.6.4; this check flags everything below 4.6.4, so verify the exact branch.",
-     "remediation": "Upgrade Samba, or set 'nt pipe support = no' in smb.conf as a workaround."},
-    {"product": "^Samba smbd$", "ranges": [["3.0.20", "3.0.26"]], "cve": "CVE-2007-2447", "cvss": 6.0,
-     "title": "Samba usermap_script command injection",
-     "description": "With 'username map script' enabled, shell metacharacters in the username are executed during login.",
-     "remediation": "Upgrade Samba (3.0.25 is ancient: replace the host or its OS)."},
-    {"product": "^Dropbear sshd$", "ranges": [["", "2016.74"]], "cve": "CVE-2016-7406", "cvss": 9.8,
-     "title": "Dropbear format-string vulnerability",
-     "description": "A format-string bug in Dropbear (common in embedded devices and routers) can allow remote code execution.",
-     "remediation": "Update the device firmware or Dropbear to 2016.74 or later."},
-    {"product": "^Microsoft IIS httpd$", "exact": ["6.0"], "cve": "CVE-2017-7269", "cvss": 9.8,
-     "title": "IIS 6.0 WebDAV ScStoragePathFromUrl overflow",
-     "description": "A buffer overflow in IIS 6.0's WebDAV service allows remote code execution. Windows Server 2003 has been out of support since 2015.",
-     "remediation": "Retire Windows Server 2003 / IIS 6.0. If impossible, disable WebDAV."},
-    {"product": "^UnrealIRCd$", "exact": ["3.2.8.1"], "cve": "CVE-2010-2075", "cvss": 7.5,
-     "title": "UnrealIRCd 3.2.8.1 backdoor",
-     "description": "Some UnrealIRCd 3.2.8.1 downloads contained a backdoor that runs any command sent after the prefix 'AB;'.",
-     "remediation": "Remove this build, install a current IRC daemon from a trusted source, and treat the host as compromised."},
-    {"product": "^distccd$", "ranges": [["", ""]], "cve": "CVE-2004-2687", "cvss": 9.3,
-     "title": "distcc daemon runs arbitrary commands",
-     "description": "distccd without access restrictions executes compile 'jobs' sent by anyone, which can be any command.",
-     "remediation": "Stop distccd, or restrict it with --allow to trusted build hosts only and firewall port 3632."}
-  ]
+ "_about": "Small bundled sample of well-known, version-detectable vulnerabilities (build step 4). Matching is by nmap's product/version strings, so treat hits as 'probable': Linux distributions often backport fixes without changing the upstream version number. Live NVD lookups (step 11) extend this. Fields: product = case-insensitive regex on nmap's product; ranges = list of [min_inclusive, max_exclusive] ('' = unbounded); 'exact' versions alternatively. distro_fixes: package revisions from Ubuntu/Debian security advisories that fixed the CVE for a given upstream version (compared with the revision in the service banner, e.g. 'OpenSSH 8.9p1 Ubuntu 3ubuntu0.10').",
+ "entries": [
+  {
+   "product": "^vsftpd$",
+   "exact": [
+    "2.3.4"
+   ],
+   "cve": "CVE-2011-2523",
+   "cvss": 9.8,
+   "title": "vsftpd 2.3.4 backdoor",
+   "description": "The vsftpd 2.3.4 source archive was replaced with a backdoored copy in 2011. Logging in with a username ending in ':)' opens a root shell on TCP port 6200.",
+   "remediation": "Replace vsftpd with a current version from your distribution and treat the host as compromised: rebuild it from a clean image.",
+   "cwe": "CWE-78 OS Command Injection",
+   "disclosed": "2011-07",
+   "fixed_in": "Any build other than the tampered 2.3.4 archive (e.g. 2.3.5 or later)"
+  },
+  {
+   "product": "^ProFTPD$",
+   "exact": [
+    "1.3.5"
+   ],
+   "cve": "CVE-2015-3306",
+   "cvss": 9.8,
+   "title": "ProFTPD 1.3.5 mod_copy unauthenticated file copy",
+   "description": "mod_copy's SITE CPFR/CPTO commands work without logging in, letting anyone copy files on the server, for example placing a PHP shell in the web root.",
+   "remediation": "Upgrade ProFTPD to 1.3.5a or later, or disable mod_copy.",
+   "cwe": "CWE-284 Improper Access Control",
+   "disclosed": "2015-04",
+   "fixed_in": "1.3.5a"
+  },
+  {
+   "product": "^OpenSSH$",
+   "ranges": [
+    [
+     "8.5p1",
+     "9.8p1"
+    ]
+   ],
+   "cve": "CVE-2024-6387",
+   "cvss": 8.1,
+   "title": "OpenSSH regreSSHion (signal handler race)",
+   "description": "A race condition in sshd's SIGALRM handler can allow unauthenticated remote code execution as root on glibc-based Linux. Exploitation is slow and timing-dependent, but practical.",
+   "remediation": "Update OpenSSH to 9.8p1 or later (or your distribution's patched package; Debian/Ubuntu backported the fix without changing the 8.x/9.x version). As a stopgap set LoginGraceTime 0 in sshd_config (this trades the RCE risk for easier connection exhaustion).",
+   "cwe": "CWE-364 Signal Handler Race Condition",
+   "disclosed": "2024-07",
+   "fixed_in": "9.8p1",
+   "distro_fixes": [
+    {
+     "distro": "Ubuntu",
+     "release": "22.04 LTS (jammy)",
+     "upstream": "8.9p1",
+     "fixed_revision": "3ubuntu0.10",
+     "package": "openssh-server",
+     "advisory": "USN-6859-1"
+    },
+    {
+     "distro": "Ubuntu",
+     "release": "23.10 (mantic)",
+     "upstream": "9.3p1",
+     "fixed_revision": "1ubuntu3.6",
+     "package": "openssh-server",
+     "advisory": "USN-6859-1"
+    },
+    {
+     "distro": "Ubuntu",
+     "release": "24.04 LTS (noble)",
+     "upstream": "9.6p1",
+     "fixed_revision": "3ubuntu13.3",
+     "package": "openssh-server",
+     "advisory": "USN-6859-1"
+    },
+    {
+     "distro": "Debian",
+     "release": "12 (bookworm)",
+     "upstream": "9.2p1",
+     "fixed_revision": "2+deb12u3",
+     "package": "openssh-server",
+     "advisory": "DSA-5724-1"
+    }
+   ]
+  },
+  {
+   "product": "^OpenSSH$",
+   "ranges": [
+    [
+     "",
+     "7.8"
+    ]
+   ],
+   "cve": "CVE-2018-15473",
+   "cvss": 5.3,
+   "title": "OpenSSH username enumeration",
+   "description": "Differences in how sshd answers malformed public-key authentication requests reveal whether a username exists, helping an attacker target password guessing.",
+   "remediation": "Upgrade OpenSSH to 7.8 or later; use key-only authentication and fail2ban or similar rate limiting.",
+   "cwe": "CWE-362 Race Condition",
+   "disclosed": "2018-08",
+   "fixed_in": "7.8",
+   "distro_fixes": [
+    {
+     "distro": "Ubuntu",
+     "release": "18.04 LTS (bionic)",
+     "upstream": "7.6p1",
+     "fixed_revision": "4ubuntu0.1",
+     "package": "openssh-server",
+     "advisory": "USN-3809-1"
+    },
+    {
+     "distro": "Ubuntu",
+     "release": "16.04 LTS (xenial)",
+     "upstream": "7.2p2",
+     "fixed_revision": "4ubuntu2.6",
+     "package": "openssh-server",
+     "advisory": "USN-3809-1"
+    },
+    {
+     "distro": "Ubuntu",
+     "release": "14.04 LTS (trusty)",
+     "upstream": "6.6p1",
+     "fixed_revision": "2ubuntu2.11",
+     "package": "openssh-server",
+     "advisory": "USN-3809-1"
+    },
+    {
+     "distro": "Debian",
+     "release": "9 (stretch)",
+     "upstream": "7.4p1",
+     "fixed_revision": "10+deb9u4",
+     "package": "openssh-server",
+     "advisory": "DSA-4280-1"
+    }
+   ]
+  },
+  {
+   "product": "^Apache httpd$",
+   "exact": [
+    "2.4.49"
+   ],
+   "cve": "CVE-2021-41773",
+   "cvss": 7.5,
+   "title": "Apache 2.4.49 path traversal",
+   "description": "A flaw in path normalization lets crafted URLs (encoded '../') read files outside the document root, and run commands if mod_cgi is enabled.",
+   "remediation": "Upgrade Apache httpd to 2.4.51 or later. Make sure 'Require all denied' protects the filesystem root.",
+   "cwe": "CWE-22 Path Traversal",
+   "disclosed": "2021-10",
+   "fixed_in": "2.4.51 (2.4.50's fix was incomplete)"
+  },
+  {
+   "product": "^Apache httpd$",
+   "exact": [
+    "2.4.49",
+    "2.4.50"
+   ],
+   "cve": "CVE-2021-42013",
+   "cvss": 9.8,
+   "title": "Apache 2.4.49/2.4.50 path traversal and RCE",
+   "description": "The fix for CVE-2021-41773 in 2.4.50 was incomplete: double-encoded traversal still reaches files outside the web root, and leads to remote code execution with mod_cgi.",
+   "remediation": "Upgrade Apache httpd to 2.4.51 or later.",
+   "cwe": "CWE-22 Path Traversal",
+   "disclosed": "2021-10",
+   "fixed_in": "2.4.51"
+  },
+  {
+   "product": "^Apache httpd$",
+   "ranges": [
+    [
+     "2.4.0",
+     "2.4.56"
+    ]
+   ],
+   "cve": "CVE-2023-25690",
+   "cvss": 9.8,
+   "title": "Apache mod_proxy HTTP request smuggling",
+   "description": "Some mod_proxy configurations using RewriteRule or ProxyPassMatch with user-supplied URL data allow request smuggling, bypassing access controls on the proxy. Only affects servers using that configuration.",
+   "remediation": "Upgrade Apache httpd to 2.4.56 or later.",
+   "cwe": "CWE-444 HTTP Request Smuggling",
+   "disclosed": "2023-03",
+   "fixed_in": "2.4.56"
+  },
+  {
+   "product": "^nginx$",
+   "ranges": [
+    [
+     "0.6.18",
+     "1.20.1"
+    ]
+   ],
+   "cve": "CVE-2021-23017",
+   "cvss": 7.7,
+   "title": "nginx resolver off-by-one",
+   "description": "When the 'resolver' directive is used, a crafted DNS response can cause a 1-byte memory overwrite, crashing the worker and possibly allowing code execution.",
+   "remediation": "Upgrade nginx to 1.20.1 / 1.21.0 or later, or avoid the resolver directive.",
+   "cwe": "CWE-193 Off-by-one Error",
+   "disclosed": "2021-05",
+   "fixed_in": "1.20.1 / 1.21.0"
+  },
+  {
+   "product": "^Exim smtpd$",
+   "ranges": [
+    [
+     "4.87",
+     "4.92"
+    ]
+   ],
+   "cve": "CVE-2019-10149",
+   "cvss": 9.8,
+   "title": "Exim 'Return of the WIZard' remote command execution",
+   "description": "Improper validation of recipient addresses lets a remote attacker run commands as root in default configurations.",
+   "remediation": "Upgrade Exim to 4.92 or later.",
+   "cwe": "CWE-78 OS Command Injection",
+   "disclosed": "2019-06",
+   "fixed_in": "4.92"
+  },
+  {
+   "product": "^dnsmasq$",
+   "ranges": [
+    [
+     "",
+     "2.78"
+    ]
+   ],
+   "cve": "CVE-2017-14491",
+   "cvss": 9.8,
+   "title": "dnsmasq DNS heap overflow",
+   "description": "A crafted DNS response causes a heap overflow in dnsmasq (common on routers), allowing remote code execution.",
+   "remediation": "Update the router firmware or dnsmasq to 2.78 or later. If the vendor no longer ships updates, replace the device.",
+   "cwe": "CWE-119 Buffer Overflow",
+   "disclosed": "2017-10",
+   "fixed_in": "2.78"
+  },
+  {
+   "product": "^Samba smbd$",
+   "ranges": [
+    [
+     "3.5.0",
+     "4.6.4"
+    ]
+   ],
+   "cve": "CVE-2017-7494",
+   "cvss": 9.8,
+   "title": "SambaCry: shared-library upload to RCE",
+   "description": "A client with write access to a share can upload a shared library and make smbd load it, running code as root. Patched in 4.4.14, 4.5.10 and 4.6.4; this check flags everything below 4.6.4, so verify the exact branch.",
+   "remediation": "Upgrade Samba, or set 'nt pipe support = no' in smb.conf as a workaround.",
+   "cwe": "CWE-94 Code Injection",
+   "disclosed": "2017-05",
+   "fixed_in": "4.6.4 / 4.5.10 / 4.4.14"
+  },
+  {
+   "product": "^Samba smbd$",
+   "ranges": [
+    [
+     "3.0.20",
+     "3.0.26"
+    ]
+   ],
+   "cve": "CVE-2007-2447",
+   "cvss": 6.0,
+   "title": "Samba usermap_script command injection",
+   "description": "With 'username map script' enabled, shell metacharacters in the username are executed during login.",
+   "remediation": "Upgrade Samba (3.0.25 is ancient: replace the host or its OS).",
+   "cwe": "CWE-20 Improper Input Validation",
+   "disclosed": "2007-05",
+   "fixed_in": "3.0.25"
+  },
+  {
+   "product": "^Dropbear sshd$",
+   "ranges": [
+    [
+     "",
+     "2016.74"
+    ]
+   ],
+   "cve": "CVE-2016-7406",
+   "cvss": 9.8,
+   "title": "Dropbear format-string vulnerability",
+   "description": "A format-string bug in Dropbear (common in embedded devices and routers) can allow remote code execution.",
+   "remediation": "Update the device firmware or Dropbear to 2016.74 or later.",
+   "cwe": "CWE-134 Format String",
+   "disclosed": "2016-09",
+   "fixed_in": "2016.74"
+  },
+  {
+   "product": "^Microsoft IIS httpd$",
+   "exact": [
+    "6.0"
+   ],
+   "cve": "CVE-2017-7269",
+   "cvss": 9.8,
+   "title": "IIS 6.0 WebDAV ScStoragePathFromUrl overflow",
+   "description": "A buffer overflow in IIS 6.0's WebDAV service allows remote code execution. Windows Server 2003 has been out of support since 2015.",
+   "remediation": "Retire Windows Server 2003 / IIS 6.0. If impossible, disable WebDAV.",
+   "cwe": "CWE-119 Buffer Overflow",
+   "disclosed": "2017-03",
+   "fixed_in": "None: IIS 6.0 / Windows Server 2003 is end-of-life"
+  },
+  {
+   "product": "^UnrealIRCd$",
+   "exact": [
+    "3.2.8.1"
+   ],
+   "cve": "CVE-2010-2075",
+   "cvss": 7.5,
+   "title": "UnrealIRCd 3.2.8.1 backdoor",
+   "description": "Some UnrealIRCd 3.2.8.1 downloads contained a backdoor that runs any command sent after the prefix 'AB;'.",
+   "remediation": "Remove this build, install a current IRC daemon from a trusted source, and treat the host as compromised.",
+   "cwe": "CWE-506 Embedded Malicious Code",
+   "disclosed": "2010-06",
+   "fixed_in": "Re-released clean 3.2.8.1 archive, or later versions"
+  },
+  {
+   "product": "^distccd$",
+   "ranges": [
+    [
+     "",
+     ""
+    ]
+   ],
+   "cve": "CVE-2004-2687",
+   "cvss": 9.3,
+   "title": "distcc daemon runs arbitrary commands",
+   "description": "distccd without access restrictions executes compile 'jobs' sent by anyone, which can be any command.",
+   "remediation": "Stop distccd, or restrict it with --allow to trusted build hosts only and firewall port 3632.",
+   "disclosed": "2004",
+   "fixed_in": "No code fix: restrict access with --allow and a firewall"
+  }
+ ]
 }

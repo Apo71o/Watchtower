@@ -98,8 +98,15 @@ docs/SPEC.md             original build prompt (authoritative requirements)
 - Findings aren't persisted; `assessment.assess()` recomputes them. Step 6 (default creds, TLS, SNMP)
   should add its results as Finding objects into `assess()` and set Finding.weight (default-creds
   hit: +15 per the spec) so risk scoring picks them up.
-- Dataset version matches are "probable" (distro backports); an NSE confirmation of the same
-  device|port|CVE merges into one "confirmed" finding.
+- Dataset version matches: `findings_engine.distro_patch_status()` reads the distro + package revision
+  from the banner and compares it with `distro_fixes` (USN/DSA fixed revisions) in data/vulns.json:
+  patched -> severity Info, Finding.patched=True, excluded from risk score; vulnerable; unknown
+  (distro marker but no revision/advisory); upstream. An NSE confirmation of the same
+  device|port|CVE merges into one "confirmed" finding and un-patches it. Only add distro_fixes
+  entries you can cite from the advisory.
+- Findings tab details = finding_markdown() (+ "Is it fixed on this system?", CVE details) +
+  device_markdown() (network/host data, open ports, risk-score breakdown, other findings). Selecting
+  a device in Top Risks shows device_markdown even when it has no findings.
 - Monitor-mode and airodump-ng paths are unit-tested against fixtures only; the cloud container
   has no Wi-Fi hardware. Verify on real hardware locally.
 

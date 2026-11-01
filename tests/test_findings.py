@@ -59,7 +59,9 @@ def test_host_findings_from_lab_scan():
     assert all(f.remediation for f in fs)
     assert all(t in TECHNIQUES for f in fs for t in f.attck)
     ssh = next(f for f in fs if f.cve_id == "CVE-2024-6387")
-    assert ssh.confidence.startswith("probable") and ssh.severity == "High"
+    # banner revision 3ubuntu0.1 is older than Ubuntu's fix 3ubuntu0.10 (USN-6859-1)
+    assert ssh.patch_check["verdict"] == "vulnerable" and ssh.severity == "High" and not ssh.patched
+    assert "not installed" in ssh.confidence
 
 
 def test_nse_not_vulnerable_ignored():
@@ -128,3 +130,66 @@ def test_assessment_dedups_and_filters_unauthorized():
 
 def test_attck_urls():
     assert url("T1557.004") == "https://attack.mitre.org/techniques/T1557/004/"
+
+
+
+@pytest.mark.parametrize("version,verdict", [
+    ("8.9p1 Ubuntu 3ubuntu0.10", "patched"),
+    ("8.9p1 Ubuntu 3ubuntu0.13", "patched"),
+    ("8.9p1 Ubuntu 3ubuntu0.6", "vulnerable"),
+    ("9.6p1 Ubuntu 3ubuntu13.5", "patched"),
+    ("9.2p1 Debian 2+deb12u3", "patched"),
+    ("9.2p1 Debian 2+deb12u2", "vulnerable"),
+    ("9.0p1 Ubuntu 1ubuntu7", "unknown"),        # no advisory recorded for 9.0p1
+    ("8.9p1", "upstream"),
+])
+def test_distro_patch_status(version, verdict):
+    entry = next(e for e in fe.dataset() if e["cve"] == "CVE-2024-6387")
+    assert fe.distro_patch_status(entry, version)["verdict"] == verdict
+
+
+def test_detect_distro():
+    assert fe.detect_distro("8.9p1 Ubuntu 3ubuntu0.10") == ("Ubuntu", "3ubuntu0.10")
+    assert fe.detect_distro("9.2p1 Debian 2+deb12u3") == ("Debian", "2+deb12u3")
+    assert fe.detect_distro("2.4.52", "(Ubuntu)") == ("Ubuntu", "")
+    assert fe.detect_distro("2.4.49", "(Unix)") is None
+
+
+def _host_with(product, version, extrainfo=""):
+    from watchtower.core.nmap_runner import Host, Port
+    return Host(address="10.0.0.9", status="up", ports=[
+        Port("tcp", 22, "open", service="ssh", product=product, version=version, extrainfo=extrainfo)])
+
+
+def test_patched_finding_is_info_and_not_scored():
+    fs = fe.host_findings(_host_with("OpenSSH", "8.9p1 Ubuntu 3ubuntu0.10"))
+    f = next(x for x in fs if x.cve_id == "CVE-2024-6387")
+    assert f.patched and f.severity == "Info" and "fixed by Ubuntu update" in f.title
+    assert f.patch_check["advisory"] == "USN-6859-1"
+    assert risk_scoring.score(fs, 1) == 1          # only the open port counts
+
+
+def test_banner_without_revision_is_unknown():
+    from watchtower.core.nmap_runner import Host, Port
+    h = Host(address="10.0.0.9", status="up", ports=[
+        Port("tcp", 80, "open", service="http", product="Apache httpd", version="2.4.49", extrainfo="(Ubuntu)")])
+    f = next(x for x in fe.host_findings(h) if x.cve_id == "CVE-2021-41773")
+    assert f.patch_check["verdict"] == "unknown" and not f.patched and "verify" in f.confidence
+
+
+def test_nse_confirmation_overrides_patched_banner():
+    from watchtower.core.nmap_runner import Host, Port, Script
+    port = Port("tcp", 22, "open", service="ssh", product="OpenSSH", version="8.9p1 Ubuntu 3ubuntu0.10",
+                scripts=[Script("ssh-regresshion", "VULNERABLE:\n  regreSSHion\n  IDs: CVE:CVE-2024-6387")])
+    h = Host(address="10.0.0.9", status="up", ports=[port])
+    from watchtower.core import assessment
+    fs = fe.host_findings(h)
+    merged = {}
+    for f in fs:
+        prev = merged.get(f.key)
+        if prev is None:
+            merged[f.key] = f
+        elif f.kind == "nse":
+            assessment.unmark_patched(prev)
+    f = merged["10.0.0.9|22/tcp|CVE-2024-6387"]
+    assert not f.patched and f.severity == "High"

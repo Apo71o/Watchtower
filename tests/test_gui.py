@@ -149,3 +149,40 @@ def test_findings_tab(ctx):
     ctx.networks.set_authorized("AA:BB:CC:00:00:03", True)
     ctx.bus.networks_changed.emit()
     assert tab.risks.rowCount() == 2
+
+
+
+def test_findings_details_for_devices_and_unauthorized(ctx):
+    from watchtower.core import wifi_scan
+    from watchtower.gui.tabs.findings_tab import FindingsTab
+    ctx.networks.record(wifi_scan.parse_iw_scan((FX / "iw_scan.txt").read_text()), source="iw")
+    tab = FindingsTab(ctx)
+    assert "Nothing assessed yet" in tab.detail.toPlainText()
+    tab.include_unauth.setChecked(True)
+    for r in range(tab.table.rowCount()):            # every finding has details incl. its device
+        tab.table.selectRow(r)
+        text = tab.detail.toPlainText()
+        assert "How to fix it" in text and "Network:" in text and "Risk score" in text
+    # a WPA3-only network has no findings but is still listed and has details
+    row = next(r for r in range(tab.risks.rowCount()) if tab.risks.item(r, 1).text().startswith("Modern"))
+    tab.risks.selectRow(row)
+    assert "BSSID" in tab.detail.toPlainText()
+    # selection survives a refresh
+    tab._show_all()
+    tab.table.selectRow(0)
+    before = tab.detail.toPlainText()
+    ctx.bus.networks_changed.emit()
+    assert tab.detail.toPlainText() == before and before
+
+
+def test_findings_details_patch_section(ctx):
+    from watchtower.gui.tabs.findings_tab import FindingsTab
+    sid = ctx.scans.start("nmap", "192.168.56.101", "nmap -sV 192.168.56.101")
+    ctx.scans.finish(sid, 0, (FX / "nmap_lab.xml").read_text())
+    tab = FindingsTab(ctx)
+    row = next(r for r in range(tab.table.rowCount()) if tab.table.item(r, 4).text() == "CVE-2024-6387")
+    tab.table.selectRow(row)
+    text = tab.detail.toPlainText()
+    for needle in ("Is it fixed on this system?", "3ubuntu0.10", "USN-6859-1", "CVE details", "CWE-364",
+                   "apt changelog openssh-server", "Open ports", "Host: 192.168.56.101"):
+        assert needle in text, needle

@@ -65,6 +65,7 @@ class FindingsTab(QWidget):
         self.assessment: Assessment | None = None
         self.shown: list[Finding] = []
         self.device_filter: str | None = None
+        self._selected_key: str | None = None   # keep the selected finding across refreshes
 
         self.summary = QLabel()
         self.min_sev = QComboBox()
@@ -135,7 +136,7 @@ class FindingsTab(QWidget):
         self.include_unauth.toggled.connect(self.refresh)
         self.min_sev.currentIndexChanged.connect(self._fill_findings)
         self.risks.itemSelectionChanged.connect(self._risk_selected)
-        self.show_all_btn.clicked.connect(lambda: (self.risks.clearSelection(), self._set_device(None)))
+        self.show_all_btn.clicked.connect(self._show_all)
         self.table.itemSelectionChanged.connect(self._finding_selected)
         ctx.bus.scan_finished.connect(self.refresh)
         ctx.bus.networks_changed.connect(self.refresh)
@@ -167,14 +168,17 @@ class FindingsTab(QWidget):
             self.device_filter = None
         self._fill_findings()
 
-    def _set_device(self, dev):
-        self.device_filter = dev
+    def _show_all(self):
+        self.risks.clearSelection()
+        self.device_filter = None
         self._fill_findings()
 
     def _risk_selected(self):
         rows = self.risks.selectionModel().selectedRows()
         if rows:
-            self._set_device(self.risks.item(rows[0].row(), 1).data(Qt.ItemDataRole.UserRole))
+            self.device_filter = self.risks.item(rows[0].row(), 1).data(Qt.ItemDataRole.UserRole)
+            self._selected_key = None
+            self._fill_findings()
 
     def _fill_findings(self):
         if not self.assessment:
@@ -197,14 +201,35 @@ class FindingsTab(QWidget):
             for c, it in enumerate(vals):
                 self.table.setItem(r, c, it)
         self.table.setSortingEnabled(True)
-        self.detail.clear()
+        self.table.clearSelection()
+        if self._selected_key:
+            for row in range(self.table.rowCount()):
+                if self.shown[self.table.item(row, 0).data(Qt.ItemDataRole.UserRole)].key == self._selected_key:
+                    self.table.selectRow(row)       # re-renders the details
+                    return
+        self._show_device_or_hint()
+
+    def _show_device_or_hint(self):
+        a = self.assessment
+        if a and self.device_filter:
+            self.detail.setMarkdown(device_markdown(a, self.device_filter))
+        elif a and not a.findings and not a.risks:
+            self.detail.setMarkdown("Nothing assessed yet. Run a scan in **Scan a Target**, or tick **Authorized** "
+                                    "for networks in **Nearby Networks** (or tick *Include unauthorized Wi-Fi "
+                                    "networks* above).")
+        else:
+            self.detail.clear()
 
     def _finding_selected(self):
         rows = self.table.selectionModel().selectedRows()
         if not rows:
             return
-        idx = self.table.item(rows[0].row(), 0).data(Qt.ItemDataRole.UserRole)
-        self.detail.setMarkdown(finding_markdown(self.shown[idx]))
+        f = self.shown[self.table.item(rows[0].row(), 0).data(Qt.ItemDataRole.UserRole)]
+        self._selected_key = f.key
+        md = finding_markdown(f)
+        if self.assessment:
+            md += "\n\n---\n\n" + device_markdown(self.assessment, f.device, exclude=f.key)
+        self.detail.setMarkdown(md)
 
 
 def finding_markdown(f: Finding) -> str:
@@ -220,10 +245,158 @@ def finding_markdown(f: Finding) -> str:
     meta.append(f"**Source:** {f.source}")
     lines += [" · ".join(meta), ""]
     lines += ["### What was found", "", f.description, ""]
+    if f.patch_check:
+        lines += _patch_section(f)
+    if f.cve_id:
+        lines += _cve_section(f)
     if f.technique:
         lines += ["### How the attack works", "", f.technique, ""]
     lines += ["### How to fix it", "", f.remediation, ""]
     if f.attck:
         lines += ["### MITRE ATT&CK", ""]
         lines += [f"- [{t}]({attck_mapping.url(t)}) {attck_mapping.name(t)}" for t in f.attck]
+    return "\n".join(lines)
+
+
+def _cell(v) -> str:
+    return str("" if v is None else v).replace("|", "\\|").replace("\n", " ")
+
+
+def _table(rows: list[tuple[str, object]]) -> list[str]:
+    rows = [(k, v) for k, v in rows if v not in (None, "", [])]
+    return ["| Field | Value |", "|---|---|"] + [f"| **{k}** | {_cell(v)} |" for k, v in rows] + [""]
+
+
+VERDICT_TEXT = {
+    "patched": "**Fixed on this host** by a distribution security update.",
+    "vulnerable": "**Not fixed:** the distribution's security update is not installed.",
+    "unknown": "**Can't tell from the network:** verify on the host.",
+    "upstream": "**Upstream build:** the version match applies directly.",
+}
+
+
+def _patch_section(f: Finding) -> list[str]:
+    c = f.patch_check
+    lines = ["### Is it fixed on this system?", "", VERDICT_TEXT.get(c.get("verdict"), ""), "",
+             c.get("explanation", ""), ""]
+    lines += _table([("Upstream version", c.get("upstream")), ("Distribution", c.get("distro")),
+                     ("Package revision (from banner)", c.get("revision") or ("not in banner" if c.get("distro")
+                                                                              else "")),
+                     ("Fixed in revision", c.get("fixed_revision")), ("Release", c.get("release")),
+                     ("Advisory", _advisory_link(c.get("advisory", "")))])
+    fixes = f.cve_info.get("distro_fixes", [])
+    if fixes:
+        lines += ["**Known distribution fixes for this CVE:**", "",
+                  "| Distribution | Release | Upstream | Fixed package revision | Advisory |", "|---|---|---|---|---|"]
+        lines += [f"| {x['distro']} | {x['release']} | {x['upstream']} | {x['upstream']}-{x['fixed_revision']} | "
+                  f"{_advisory_link(x['advisory'])} |" for x in fixes]
+        lines.append("")
+    if c.get("verdict") in ("unknown", "vulnerable", "patched") and c.get("distro"):
+        pkg = c.get("package") or next((x.get("package") for x in fixes if x.get("package")), "") or "<package>"
+        cve = f.cve_id.split(",")[0].strip()
+        lines += ["**Check on the host itself:**", "",
+                  f"- Installed version: `apt policy {pkg}`",
+                  f"- Whether the fix is in its changelog: `apt changelog {pkg} | grep {cve}`",
+                  "- Install pending security updates: `sudo apt update && sudo apt upgrade`", ""]
+    return lines
+
+
+def _advisory_link(adv: str) -> str:
+    if adv.startswith("USN-"):
+        return f"[{adv}](https://ubuntu.com/security/notices/{adv})"
+    if adv.startswith("DSA-"):
+        num = adv[4:].split("-")[0]
+        return f"[{adv}](https://www.debian.org/security/dsa-{num})"
+    return adv
+
+
+def _cve_section(f: Finding) -> list[str]:
+    info = f.cve_info
+    cves = [c.strip() for c in f.cve_id.split(",") if c.strip()]
+    lines = ["### CVE details", ""]
+    affected = []
+    for lo, hi in info.get("ranges", []):
+        if lo and hi:
+            affected.append(f"{lo} up to (not including) {hi}")
+        elif hi:
+            affected.append(f"below {hi}")
+        elif lo:
+            affected.append(f"{lo} and later")
+        else:
+            affected.append("all versions")
+    if info.get("exact"):
+        affected.append(", ".join(info["exact"]))
+    lines += _table([
+        ("CVE", ", ".join(cves)), ("CVSS v3", f"{f.cvss:.1f} ({f.severity if not f.patched else 'patched'})"
+                                   if f.cvss is not None else ""),
+        ("Weakness (CWE)", info.get("cwe")), ("Disclosed", info.get("disclosed")),
+        ("Affected upstream versions", "; ".join(affected)), ("Fixed upstream in", info.get("fixed_in")),
+        ("Version seen on host", f.version),
+    ])
+    for c in cves:
+        lines.append(f"- {c}: [NVD](https://nvd.nist.gov/vuln/detail/{c}) · "
+                     f"[MITRE](https://www.cve.org/CVERecord?id={c}) · "
+                     f"[Ubuntu](https://ubuntu.com/security/{c}) · "
+                     f"[Debian](https://security-tracker.debian.org/tracker/{c})")
+    lines.append("")
+    return lines
+
+
+def device_markdown(a: Assessment, device: str, exclude: str | None = None) -> str:
+    """Everything known about one device: identity, what was observed, how its
+    risk score adds up, and its findings."""
+    risk = a.risk_for(device)
+    lines: list[str] = []
+    if device in a.networks:
+        n = a.networks[device]
+        lines += [f"## Network: {n.get('ssid') or '(hidden)'}", ""]
+        freq = f" ({n['freq']} MHz)" if n.get("freq") else ""
+        signal = (f"{n['signal_dbm']} dBm" if n.get("signal_dbm") is not None else
+                  f"{n['signal_pct']}%" if n.get("signal_pct") is not None else "")
+        lines += _table([
+            ("SSID", n.get("ssid") or "(hidden)"), ("BSSID", n["bssid"]),
+            ("Authorized", "yes" if n.get("authorized") else "no (assessed from its broadcast only)"),
+            ("Security", n.get("security")), ("Authentication", n.get("auth")), ("Cipher", n.get("cipher")),
+            ("WPS", {1: "advertised", 0: "not advertised"}.get(n.get("wps"), "unknown (scan with iw to check)")),
+            ("Channel", f"{n['channel']}{freq}" if n.get("channel") else ""), ("Signal", signal),
+            ("Clients seen", n.get("clients") or ""),
+            ("First seen", (n.get("first_seen") or "")[:19].replace("T", " ")),
+            ("Last seen", (n.get("last_seen") or "")[:19].replace("T", " ")), ("Seen by", n.get("source")),
+        ])
+    elif device in a.hosts:
+        h, scan = a.hosts[device]
+        lines += [f"## Host: {h.label}", ""]
+        os_guess = "; ".join(f"{name} ({acc}%)" for name, acc in h.os_matches[:3])
+        lines += _table([
+            ("Address", h.address), ("Hostnames", ", ".join(h.hostnames)),
+            ("MAC", f"{h.mac} {h.vendor}".strip()), ("Status", h.status), ("OS guess", os_guess),
+            ("Not shown", h.closed_summary),
+            ("Last scan", f"#{scan.get('id')} at {(scan.get('started') or '')[:19].replace('T', ' ')}"),
+            ("Scan command", f"`{scan.get('command', '')}`"),
+        ])
+        ports = [p for p in h.ports if p.state.startswith("open")]
+        if ports:
+            lines += ["### Open ports", "", "| Port | Service | Version |", "|---|---|---|"]
+            lines += [f"| {p.portid}/{p.protocol} | {_cell(p.service + (' (' + p.tunnel + ')' if p.tunnel else ''))} "
+                      f"| {_cell(p.version_string)} |" for p in ports]
+            lines.append("")
+    else:
+        lines += [f"## {device}", ""]
+    if risk:
+        b = risk.breakdown
+        lines += ["### Risk score", "",
+                  f"**{risk.score} / 100** = {b.get('cvss_points', 0):.0f} (6 × worst CVSS "
+                  f"{b.get('worst_cvss', 0):.1f}) + {b.get('finding_points', 0):.0f} (finding weights, max 70) + "
+                  f"{b.get('port_points', 0):.0f} (open ports, max 15), capped at 100.", ""]
+        others = [f for f in risk.findings if f.key != exclude]
+        title = "Other findings on this device" if exclude else "Findings on this device"
+        if others:
+            lines += [f"### {title}", ""]
+            lines += [f"- **{f.severity}**: {f.title}" + (f" ({f.port})" if f.port else "") for f in others]
+        elif not exclude:
+            lines += ["### Findings", "", "No weaknesses found for this device."]
+            sec = a.networks.get(device, {}).get("security", "")
+            if sec == "WPA3":
+                lines += ["", "WPA3-Personal (SAE) only: resistant to offline passphrase guessing, with "
+                          "protected management frames. This is the recommended configuration."]
     return "\n".join(lines)

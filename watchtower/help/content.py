@@ -81,10 +81,15 @@ what to change to fix it. Select a finding to read the details; Wi-Fi findings
 also explain how the attack technique works.
 
 **Where findings come from (all offline):**
-- **Version matches** against a small bundled set of well-known CVEs. Marked
-  *probable*: Linux distributions often patch without changing the version
-  number nmap sees. If nmap's own vuln script confirms the same CVE, the finding
-  is upgraded to *confirmed*.
+- **Version matches** against a small bundled set of well-known CVEs. Linux
+  distributions often fix ("backport") security bugs without changing the
+  version number nmap sees, so Watchtower reads the package revision from the
+  banner (e.g. `OpenSSH 8.9p1 Ubuntu 3ubuntu0.10`) and compares it with
+  Ubuntu/Debian security advisories. Each such finding has an **Is it fixed on
+  this system?** section: *fixed by distro update* (shown as Info, not counted
+  in the risk score), *update not installed*, or *can't tell* (with the commands
+  to check on the host). If nmap's own vuln script confirms the CVE, that
+  overrides the version check.
 - **Exposure rules:** risky services being reachable at all (telnet, Docker API,
   Redis, RDP, SNMP, plain FTP/HTTP, ...).
 - **nmap vuln scripts:** anything a `--script vuln` run reported as VULNERABLE.
@@ -92,7 +97,9 @@ also explain how the attack technique works.
 
 **Top risks** ranks each device 0-100: 6 × its worst CVSS score, plus
 weights for its findings (severity, or the Wi-Fi weakness), plus 1 per open
-port. Click a device to filter the list. Live NVD lookups (build step 11) will
+port. Click a device to filter the list and see everything known about it.
+Every finding's details include the CVE data (CWE, dates, affected and fixed
+versions, NVD/Ubuntu/Debian links) and the device it was found on. Live NVD lookups (build step 11) will
 extend the CVE coverage.
 """,
 "host_audit": """
@@ -230,6 +237,11 @@ GLOSSARY: list[tuple[str, str]] = [
  "An attacker-controlled access point imitating a legitimate SSID so clients connect to "
  "it. Watchtower does not create one; the term is here because \"What Changed\" can flag "
  "an unexpected new BSSID advertising your SSID, which is how you would spot one."),
+("Backported security fix",
+ "Ubuntu and Debian freeze a package's upstream version for the life of a release and apply security fixes as "
+ "patches, bumping only the package revision: OpenSSH 8.9p1 on Ubuntu 22.04 went from 3ubuntu0.1 to 3ubuntu0.10 "
+ "and beyond. A scanner that only looks at '8.9p1' would call it vulnerable forever. The advisories (USN for "
+ "Ubuntu, DSA for Debian) list the first fixed revision, which is what Watchtower compares against."),
 ("Probable vs confirmed",
  "A **probable** finding is a version match: nmap reported a version known to be vulnerable. Linux distributions "
  "often backport security fixes without changing the version number (Ubuntu's OpenSSH 8.9p1 can be fully "

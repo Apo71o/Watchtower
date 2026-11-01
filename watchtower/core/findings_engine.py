@@ -40,6 +40,9 @@ class Finding:
     confidence: str = "confirmed"  # "confirmed" | "probable (version match)"
     weight: float = 0            # risk-score contribution beyond CVSS (see risk_scoring)
     source: str = ""             # "dataset" | "rule" | "nmap NSE: <script>" | "wifi advisor"
+    patched: bool = False        # fixed by a distro security update (excluded from risk score)
+    cve_info: dict = field(default_factory=dict)   # dataset entry: cwe, disclosed, fixed_in, distro_fixes, ...
+    patch_check: dict = field(default_factory=dict)  # distro/revision detection + verdict (see distro_patch_status)
 
     @property
     def key(self) -> str:
@@ -81,6 +84,65 @@ def clean_version(v: str) -> str | None:
     if " - " in v or not re.match(r"^\d[\w.~+-]*$", first) or re.search(r"(^|\.)[xX](\.|$)", first):
         return None
     return first
+
+
+_DISTRO_RE = re.compile(r"\b(Ubuntu|Debian)[ -]+([0-9][\w.+~:-]*)", re.IGNORECASE)
+
+
+def detect_distro(version: str, extrainfo: str = "") -> tuple[str, str] | None:
+    """'8.9p1 Ubuntu 3ubuntu0.10' -> ('Ubuntu', '3ubuntu0.10'). Debian-family
+    sshd banners carry the package revision; most other services (Apache's
+    '(Ubuntu)') only name the distro, giving ('Ubuntu', '')."""
+    m = _DISTRO_RE.search(version or "")
+    if m:
+        return m.group(1).capitalize(), m.group(2)
+    for text in (version, extrainfo):
+        m2 = re.search(r"\b(Ubuntu|Debian)\b", text or "", re.IGNORECASE)
+        if m2:
+            return m2.group(1).capitalize(), ""
+    return None
+
+
+def distro_patch_status(entry: dict, version: str, extrainfo: str = "") -> dict:
+    """Did the distro backport the fix? Returns a dict with keys:
+    verdict: 'patched' | 'vulnerable' | 'unknown' | 'upstream' (no distro marker),
+    distro, revision, upstream, advisory, fixed_revision, release, explanation."""
+    upstream = clean_version(version) or ""
+    found = detect_distro(version, extrainfo)
+    out = {"verdict": "upstream", "upstream": upstream, "distro": "", "revision": ""}
+    if not found:
+        out["explanation"] = ("No distribution marker in the banner, so this looks like an upstream build: the "
+                              "version comparison applies directly.")
+        return out
+    distro, revision = found
+    out.update(distro=distro, revision=revision, verdict="unknown")
+    fixes = [f for f in entry.get("distro_fixes", []) if f["distro"] == distro and f["upstream"] == upstream]
+    if not revision:
+        out["explanation"] = (f"The service says it's {distro}'s package, but its banner doesn't include the "
+                              f"package revision, so Watchtower can't tell whether {distro}'s security update is "
+                              "installed. "
+                              "Check on the host itself (see below).")
+        return out
+    if not fixes:
+        out["explanation"] = (f"{distro} package revision {revision}: Watchtower's advisory list has no "
+                              f"{distro} fix recorded for upstream {upstream}. The release may be unaffected, "
+                              "unsupported, or simply not in the list. Check the security tracker links below.")
+        return out
+    fix = fixes[0]
+    out.update(advisory=fix["advisory"], fixed_revision=fix["fixed_revision"], release=fix["release"],
+               package=fix.get("package", ""))
+    if version_key(revision) >= version_key(fix["fixed_revision"]):
+        out["verdict"] = "patched"
+        out["explanation"] = (f"{distro} {fix['release']} fixed this in {fix.get('package', 'the')} package "
+                              f"{upstream}-{fix['fixed_revision']} ({fix['advisory']}). This host reports revision "
+                              f"{revision}, which is the same or newer, so the fix is installed even though the "
+                              f"upstream version number ({upstream}) is in the vulnerable range.")
+    else:
+        out["verdict"] = "vulnerable"
+        out["explanation"] = (f"{distro} {fix['release']} fixed this in package revision {fix['fixed_revision']} "
+                              f"({fix['advisory']}). This host reports {revision}, which is older: the security "
+                              "update is not installed.")
+    return out
 
 
 def in_range(v: str, lo: str, hi: str) -> bool:
@@ -193,6 +255,24 @@ def _service_label(p: Port) -> str:
     return f"{p.portid}/{p.protocol} {p.service} {p.version_string}".strip()
 
 
+def mark_patched(f: Finding) -> None:
+    f.patched = True
+    f.severity = "Info"
+    f.weight = 0
+    f.confidence = f"patched by {f.patch_check.get('distro', 'distro')} security update"
+    f.title = f"{f.title} (fixed by {f.patch_check.get('distro', 'distro')} update)"
+
+
+def unmark_patched(f: Finding) -> None:
+    """An nmap script actively confirmed the issue: the version check was wrong."""
+    if not f.patched:
+        return
+    f.patched = False
+    f.severity = severity_from_cvss(f.cvss)
+    f.weight = SEV_WEIGHT[f.severity]
+    f.title = f.title.rsplit(" (fixed by", 1)[0]
+
+
 _CVE_RE = re.compile(r"CVE-\d{4}-\d{4,7}")
 _CVSS_RE = re.compile(r"CVSSv?\d?:?\s*([\d.]+)")
 _RISK_RE = re.compile(r"Risk factor:\s*(\w+)", re.IGNORECASE)
@@ -232,12 +312,20 @@ def host_findings(host: Host) -> list[Finding]:
     for p in open_ports:
         for e in match_dataset(p.product, p.version):
             sev = severity_from_cvss(e["cvss"])
-            out.append(Finding(
+            check = distro_patch_status(e, p.version, p.extrainfo)
+            f = Finding(
                 device=dev, device_label=label, kind="service", title=e["title"], severity=sev,
                 description=e["description"], remediation=e["remediation"], service=_service_label(p),
                 port=f"{p.portid}/{p.protocol}", version=p.version, cve_id=e["cve"], cvss=e["cvss"],
                 attck=["T1190", "T1210"], confidence="probable (version match)",
-                weight=SEV_WEIGHT[sev], source="dataset"))
+                weight=SEV_WEIGHT[sev], source="dataset", cve_info=e, patch_check=check)
+            if check["verdict"] == "patched":
+                mark_patched(f)
+            elif check["verdict"] == "vulnerable":
+                f.confidence = f"likely vulnerable ({check['distro']} security update not installed)"
+            elif check["verdict"] == "unknown":
+                f.confidence = f"probable ({check['distro']} may have backported the fix; verify on the host)"
+            out.append(f)
         for r in RULES:
             try:
                 hit = r.match(p)
