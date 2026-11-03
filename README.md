@@ -19,6 +19,45 @@ queries; each is logged.
 - **Full spec:** [docs/SPEC.md](docs/SPEC.md)
 - **Build progress and conventions:** [CLAUDE.md](CLAUDE.md)
 
+## Quick start (Ubuntu / Debian)
+
+**1. Get the app and its Python environment** (Qt needs a few system libraries):
+
+```bash
+sudo apt update
+sudo apt install -y git python3-venv python3-pip libegl1 libgl1 libxkbcommon0 libdbus-1-3 libfontconfig1 libglib2.0-0
+git clone https://github.com/Apo71o/Watchtower.git watchtower
+cd watchtower
+python3 -m venv .venv
+.venv/bin/pip install -e .
+```
+
+**2. Install the security tools it wraps** (install only what you need — the in-app Dependency Check lists these too, and missing ones just gray out their feature):
+
+```bash
+sudo apt install -y nmap iw aircrack-ng network-manager snmp testssl.sh nikto tshark wireshark hashcat
+```
+
+**3. John the Ripper — the "jumbo" build** (for Password Tools' hash/document recovery). Ubuntu's `john` package is the limited **core** build with no `zip2john` and few formats, so build jumbo from source:
+
+```bash
+sudo apt install -y build-essential libssl-dev zlib1g-dev yasm libgmp-dev libpcap-dev libbz2-dev pkg-config
+git clone --depth 1 https://github.com/openwall/john ~/john-jumbo
+cd ~/john-jumbo/src && ./configure && make -sj"$(nproc)"
+echo 'export PATH="$HOME/john-jumbo/run:$PATH"' >> ~/.bashrc && export PATH="$HOME/john-jumbo/run:$PATH"
+```
+
+Adding `~/john-jumbo/run` to your `PATH` (not a symlink) is important — jumbo John loads `john.conf` and its data from the folder of the binary you launch.
+
+**4. Run Watchtower:**
+
+```bash
+cd ~/watchtower          # the folder you cloned in step 1
+.venv/bin/python -m watchtower
+```
+
+Prefer a one-command install with a desktop launcher? Use `./install.sh` instead (details, privileges, and Windows steps are in [INSTALL.md](INSTALL.md)).
+
 ## Status
 
 All 11 build steps are done, plus one-click fixes:
